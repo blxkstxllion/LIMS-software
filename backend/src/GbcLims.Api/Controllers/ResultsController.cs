@@ -138,6 +138,14 @@ public class ResultsController : ControllerBase
             var dto = new ResultDto(result) { CreatedBy = User.FindFirst("staffId")?.Value ?? string.Empty };
             return CreatedAtAction(nameof(Get), new { sampleId = result.SampleId }, dto);
         }
+        // AnalysisNumber is generated client-side from the trailing digits of
+        // Date.now(), which repeats every ~16.7 minutes — a real, if infrequent,
+        // collision risk. Called out separately so the user gets an actionable message.
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Result create failed due to a duplicate AnalysisNumber");
+            return Conflict(new { message = "This Result ID is already in use. Please try submitting again." });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Result create failed");

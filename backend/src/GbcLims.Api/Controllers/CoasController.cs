@@ -163,6 +163,14 @@ public class CoasController : ControllerBase
             var dto = await BuildCoaDtoAsync(coa);
             return CreatedAtAction(nameof(Get), new { sampleId = sample.Id }, dto);
         }
+        // CoaNumber is generated client-side from the trailing digits of Date.now(),
+        // which repeats every ~16.7 minutes — a real, if infrequent, collision risk.
+        // Called out separately so the user gets an actionable message.
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "COA create failed due to a duplicate CoaNumber");
+            return Conflict(new { message = "This COA number is already in use. Please try generating again." });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "COA create failed");

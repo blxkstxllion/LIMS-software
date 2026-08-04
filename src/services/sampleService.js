@@ -108,6 +108,19 @@ export async function updateSampleStatus(sampleId, status) {
   });
 }
 
+export async function updateSample(sampleId, payload) {
+  const response = await request(`/api/samples/${sampleId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return {
+    ...response,
+    id: response.sampleNumber,
+    status: response.status,
+    dateReceived: response.dateReceived?.split("T")[0],
+  };
+}
+
 export async function deleteSample(sampleId) {
   return request(`/api/samples/${sampleId}`, { method: "DELETE" });
 }

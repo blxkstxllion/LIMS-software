@@ -26,7 +26,7 @@ import { useUI } from "./contexts/UIContext";
  */
 export default function AppBootstrap() {
   const { user, login, logout } = useAuth();
-  const { samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged } = useSamples();
+  const { samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged } = useSamples();
   const { toast, clearToast, page, setPage, showToast } = useUI();
 
   // Permission helper: check if user can access a feature
@@ -71,6 +71,7 @@ export default function AppBootstrap() {
           onResultAdded={onResultAdded}
           onCoaCreated={onCoaCreated}
           onSampleStatusChanged={onSampleStatusChanged}
+          onSampleUpdated={onSampleUpdated}
           onSampleDeleted={onSampleDeleted}
           onResultStatusChanged={onResultStatusChanged}
           onCoaStatusChanged={onCoaStatusChanged}

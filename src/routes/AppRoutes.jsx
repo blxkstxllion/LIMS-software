@@ -15,6 +15,7 @@ export default function AppRoutes({
   onResultAdded,
   onCoaCreated,
   onSampleStatusChanged,
+  onSampleUpdated,
   onSampleDeleted,
   onResultStatusChanged,
   onCoaStatusChanged,
@@ -24,7 +25,7 @@ export default function AppRoutes({
   if (!user) return null;
   if (!canAccess(page)) return <AccessDenied page={page} />;
 
-  const pageProps = { user, samples, results, coas, setSamples, setResults, setCoas, onNavigate, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, showToast };
+  const pageProps = { user, samples, results, coas, setSamples, setResults, setCoas, onNavigate, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, showToast };
 
   switch (page) {
     case "dashboard":

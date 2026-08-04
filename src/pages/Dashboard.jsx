@@ -1,10 +1,19 @@
+import { useEffect, useState } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, FileText, Target, FolderOpen, TrendingUp, Settings, Clock, Bell, Users, Activity } from "lucide-react";
 import { ROLE_LABELS, ROLE_COLORS } from "../constants/lims";
 import { formatDate, getGreeting, statusColor, statusBg, priorityColor, priorityBg } from "../utils/lims";
 import { Badge, StatCard } from "../components/shared";
+import { fetchUsers } from "../services/userService";
 
 export default function Dashboard({ user, samples, results, coas, onNavigate }) {
+  const [activeUserCount, setActiveUserCount] = useState(null);
+
+  useEffect(() => {
+    if (user.role !== "admin") return;
+    fetchUsers().then((users) => setActiveUserCount(users.filter((u) => u.status === "Active").length)).catch((error) => console.error("Failed to load users", error));
+  }, [user.role]);
+
   const stats = {
     total: samples.length,
     pending: samples.filter((s) => s.status.includes("Pending")).length,
@@ -51,10 +60,9 @@ export default function Dashboard({ user, samples, results, coas, onNavigate }) 
         <StatCard label="Pending Analysis" value={stats.pending} icon="Clock" color="#fef3c7" onClick={() => onNavigate("sample_management")} />
         <StatCard label="Completed" value={stats.completed} icon="CheckCircle" color="#dcfce7" onClick={() => onNavigate("sample_management")} />
         <StatCard label="Pending Approval" value={stats.pendingApproval} icon="Bell" color="#fee2e2" onClick={() => onNavigate("results_entry")} />
-        {user.role === "admin" && <>
-          <StatCard label="Active Users" value="4" icon="Users" color="#f3e8ff" onClick={() => onNavigate("admin_panel")} />
-          <StatCard label="System Uptime" value="99.8%" icon="Activity" color="#f0fdf4" onClick={() => onNavigate("admin_panel")} />
-        </>}
+        {user.role === "admin" && (
+          <StatCard label="Active Users" value={activeUserCount ?? "—"} icon="Users" color="#f3e8ff" onClick={() => onNavigate("admin_panel")} />
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 28 }}>

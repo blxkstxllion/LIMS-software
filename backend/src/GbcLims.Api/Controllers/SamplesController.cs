@@ -41,6 +41,18 @@ public class SamplesController : ControllerBase
         return await _context.Samples.Include(s => s.CreatedBy).FirstOrDefaultAsync(s => s.SampleNumber == identifier && !s.IsDeleted);
     }
 
+    // SampleDto renders status as spaced words ("Pending Verification") to match the
+    // frontend's status-badge colors and exact-match filters (Sample Verification's
+    // queue, Results Entry's available-samples list) — both were written against that
+    // human-readable form, not the bare enum name. Accepting the same spaced form back
+    // here (in addition to the unspaced enum name, for any other caller) means a status
+    // string round-tripped from a GET response always parses correctly on the way back in.
+    private static bool TryParseSampleStatus(string? value, out SampleStatus status)
+        => Enum.TryParse(value?.Replace(" ", ""), true, out status);
+
+    private static string FormatSampleStatus(SampleStatus status)
+        => System.Text.RegularExpressions.Regex.Replace(status.ToString(), "(?<!^)([A-Z])", " $1");
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<SampleDto>>> Get([FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? priority, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
     {
@@ -51,7 +63,7 @@ public class SamplesController : ControllerBase
             {
                 query = query.Where(s => s.SampleNumber.Contains(search) || s.Location.Contains(search) || s.Origin.Contains(search));
             }
-            if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<SampleStatus>(status, true, out var parsedStatus))
+            if (!string.IsNullOrWhiteSpace(status) && TryParseSampleStatus(status, out var parsedStatus))
             {
                 query = query.Where(s => s.Status == parsedStatus);
             }
@@ -132,10 +144,60 @@ public class SamplesController : ControllerBase
             var dto = new SampleDto(sample) { CreatedBy = User.FindFirst("staffId")?.Value ?? string.Empty };
             return CreatedAtAction(nameof(GetById), new { id = sample.Id }, dto);
         }
+        // The frontend generates SampleNumber client-side from a 6-digit random suffix,
+        // so a collision — while unlikely per attempt — is a real possibility as the
+        // number of samples in a given year grows. Distinguished from other failures so
+        // the user gets an actionable message instead of a generic "something went wrong".
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Sample create failed due to a duplicate SampleNumber");
+            return Conflict(new { message = "This Sample ID is already in use. Please try registering again." });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Sample create failed");
             return StatusCode(500, new { message = "Unable to create sample at the moment." });
+        }
+    }
+
+    // Edits the sample's own descriptive fields (location, quantity, priority, assignment,
+    // batch number, notes) as distinct from its workflow state, which only ever moves
+    // through UpdateStatus below and its allowed-transition checks. Previously there was
+    // no endpoint for these fields at all — the frontend's Edit Sample modal let a user
+    // change all of them, but only ever called the status-update endpoint, so everything
+    // except status silently never reached the database.
+    [HttpPut("{id}")]
+    public async Task<ActionResult<SampleDto>> Update(string id, [FromBody] UpdateSampleRequest request)
+    {
+        try
+        {
+            var sample = await ResolveSampleAsync(id);
+            if (sample is null) return NotFound();
+
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            var canEditAny = role is "admin" or "bauxite_engineer" or "qa_engineer";
+            var canEditOwn = role == "xrf_chemist" && sample.CreatedById == userId;
+            if (!canEditAny && !canEditOwn)
+            {
+                return StatusCode(403, new { message = "You do not have permission to update this sample." });
+            }
+
+            sample.Location = request.Location;
+            sample.Quantity = request.Quantity;
+            sample.Priority = request.Priority;
+            sample.AssignedTo = request.AssignedTo;
+            sample.BatchNumber = request.BatchNumber;
+            sample.Notes = request.Notes;
+            sample.UpdatedAt = DateTimeOffset.UtcNow;
+            await _context.SaveChangesAsync();
+            await _auditLogService.LogAsync("Update", "Sample", nameof(Sample), sample.Id.ToString(), "Sample details updated", userId, User.Identity?.Name, sample.Id);
+            return Ok(new SampleDto(sample));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sample update failed for id {SampleId}", id);
+            return StatusCode(500, new { message = "Unable to update sample at the moment." });
         }
     }
 
@@ -159,7 +221,7 @@ public class SamplesController : ControllerBase
                 return StatusCode(403, new { message = "You do not have permission to update this sample." });
             }
 
-            if (!Enum.TryParse<SampleStatus>(request.Status, true, out var nextStatus)) return BadRequest();
+            if (!TryParseSampleStatus(request.Status, out var nextStatus)) return BadRequest();
 
             var allowedTransitions = new Dictionary<SampleStatus, List<SampleStatus>>
             {
@@ -226,6 +288,7 @@ public class SamplesController : ControllerBase
     }
 
     public record CreateSampleRequest(string SampleNumber, string Origin, string SampleSource, string Location, decimal Quantity, string Unit, decimal Tonnage, string Priority, string SubmittedBy, string ReceivedBy, string BatchNumber, string Notes);
+    public record UpdateSampleRequest(string Location, decimal Quantity, string Priority, string? AssignedTo, string BatchNumber, string Notes);
     public record UpdateSampleStatusRequest(string Status);
 
     public class SampleDto
@@ -242,11 +305,12 @@ public class SamplesController : ControllerBase
             Unit = sample.Unit;
             Tonnage = sample.Tonnage;
             Priority = sample.Priority;
-            Status = sample.Status.ToString();
+            Status = FormatSampleStatus(sample.Status);
             SubmittedBy = sample.SubmittedBy;
             ReceivedBy = sample.ReceivedBy;
             BatchNumber = sample.BatchNumber;
             Notes = sample.Notes;
+            AssignedTo = sample.AssignedTo ?? string.Empty;
             DateReceived = sample.DateReceived;
             CreatedAt = sample.CreatedAt;
             CreatedBy = sample.CreatedBy?.StaffId ?? string.Empty;
@@ -267,6 +331,7 @@ public class SamplesController : ControllerBase
         public string ReceivedBy { get; set; } = string.Empty;
         public string BatchNumber { get; set; } = string.Empty;
         public string Notes { get; set; } = string.Empty;
+        public string AssignedTo { get; set; } = string.Empty;
         public DateTimeOffset DateReceived { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public string CreatedBy { get; set; } = string.Empty;

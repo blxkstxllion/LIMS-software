@@ -116,14 +116,14 @@ export function SampleRegistration({ user, onSampleAdded, showToast }) {
         <Textarea label="Notes" value={form.notes} onChange={(v)=>set("notes",v)} placeholder="Additional notes or special instructions…" />
         <div style={{ display:"flex", gap:12, marginTop:8 }}>
           <Button onClick={handleSubmit} variant="primary">✓ Register Sample</Button>
-          <Button variant="secondary" onClick={()=>setForm({origin:"",sampleSource:"",location:"",quantity:"",unit:"kg",priority:"Medium",submittedBy:"",receivedBy:user.name,batchNumber:"",notes:"",sampleFrequency:"",dailyTime:"",sublotNumber:""})}>Clear Form</Button>
+          <Button variant="secondary" onClick={()=>setForm({origin:"",sampleSource:"",location:"",quantity:"",unit:"kg",tonnage:"",priority:"Medium",submittedBy:"",receivedBy:user.name,batchNumber:"",notes:"",sampleFrequency:"",dailyTime:"",sublotNumber:""})}>Clear Form</Button>
         </div>
       </div>
     </div>
   );
 }
 
-export function SampleManagement({ user, samples, setSamples, showToast, onSampleStatusChanged, onSampleDeleted }) {
+export function SampleManagement({ user, samples, showToast, onSampleStatusChanged, onSampleUpdated, onSampleDeleted }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
@@ -160,16 +160,27 @@ export function SampleManagement({ user, samples, setSamples, showToast, onSampl
   };
 
   const handleSaveEdit = async () => {
-    if (editData) {
-      const status = editData.status;
-      try {
-        await onSampleStatusChanged(editData.id, status);
-        setSamples((prev) => prev.map((s) => s.id === editData.id ? { ...s, ...editData } : s));
-        showToast("Sample updated successfully.", "success");
-        setEditMode(false); setSelected(editData);
-      } catch (error) {
-        showToast(error.message || "Unable to update sample.", "error");
+    if (!editData) return;
+    try {
+      // Status moves through its own transition-checked endpoint; only send it if it
+      // actually changed, since re-sending an unchanged status can be rejected as an
+      // invalid self-transition for states that don't allow looping (most of them).
+      const original = samples.find((s) => s.id === editData.id);
+      if (original && original.status !== editData.status) {
+        await onSampleStatusChanged(editData.id, editData.status);
       }
+      await onSampleUpdated(editData.id, {
+        location: editData.location,
+        quantity: Number(editData.quantity),
+        priority: editData.priority,
+        assignedTo: editData.assignedTo || "",
+        batchNumber: editData.batchNumber || "",
+        notes: editData.notes || "",
+      });
+      showToast("Sample updated successfully.", "success");
+      setEditMode(false); setSelected(editData);
+    } catch (error) {
+      showToast(error.message || "Unable to update sample.", "error");
     }
   };
 
@@ -976,6 +987,9 @@ export function Reports({ samples, results, coas }) {
   const [reportFrequency, setReportFrequency] = useState("daily");
   const [reportFormat, setReportFormat] = useState("pdf");
   const [reportTitle, setReportTitle] = useState("LIMS Summary Report");
+  const [qcSamples, setQcSamples] = useState([]);
+
+  useEffect(() => { fetchQcSamples().then(setQcSamples).catch((error) => console.error("Failed to load QC samples", error)); }, []);
 
   const getPeriodRange = (frequency) => {
     const now = new Date();
@@ -1000,11 +1014,33 @@ export function Reports({ samples, results, coas }) {
   });
 
   const gradeData = filteredResults.slice(0, 15).map((r) => ({ al2o3: parseFloat(r.al2o3) || 0, sio2: parseFloat(r.sio2) || 0, asr: parseFloat(r.asr) || 0, id: r.sampleId }));
-  const analystData = [
-    { analyst: "John Doe", samples: filteredResults.filter((r) => r.analystName === "John Doe").length, completed: filteredResults.filter((r) => r.analystName === "John Doe" && r.status === "Approved").length },
-    { analyst: "Dr. Taylor", samples: filteredResults.filter((r) => r.analystName === "Dr. Taylor").length, completed: filteredResults.filter((r) => r.analystName === "Dr. Taylor" && r.status === "Approved").length },
-    { analyst: "Dr. Johnson", samples: filteredResults.filter((r) => r.analystName === "Dr. Johnson").length, completed: filteredResults.filter((r) => r.analystName === "Dr. Johnson" && r.status === "Approved").length },
-  ];
+  // Derived from whoever actually entered results in this period, not a fixed roster —
+  // fixed placeholder names would never match real analysts and always show zero.
+  const analystNames = [...new Set(filteredResults.map((r) => r.analystName).filter(Boolean))];
+  const analystData = analystNames.map((analyst) => ({
+    analyst,
+    samples: filteredResults.filter((r) => r.analystName === analyst).length,
+    completed: filteredResults.filter((r) => r.analystName === analyst && r.status === "Approved").length,
+  }));
+
+  const qcPassRate = qcSamples.length ? Math.round((qcSamples.filter((q) => q.status === "Pass").length / qcSamples.length) * 100) : 0;
+  const qcFailedCount = qcSamples.filter((q) => q.status === "Fail").length;
+  const calibratedCount = filteredResults.filter((r) => r.calibrated).length;
+  const calibrationCompliance = filteredResults.length ? Math.round((calibratedCount / filteredResults.length) * 100) : 0;
+  const qcTrendData = (() => {
+    const byMonth = {};
+    qcSamples.forEach((q) => {
+      if (!q.date) return;
+      const monthKey = q.date.slice(0, 7);
+      if (!byMonth[monthKey]) byMonth[monthKey] = { total: 0, pass: 0 };
+      byMonth[monthKey].total += 1;
+      if (q.status === "Pass") byMonth[monthKey].pass += 1;
+    });
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({
+      m: new Date(`${month}-01`).toLocaleDateString("en-GB", { month: "short" }),
+      rate: v.total ? Math.round((v.pass / v.total) * 100) : 0,
+    }));
+  })();
 
   const trendData = (() => {
     const byDate = {};
@@ -1014,7 +1050,7 @@ export function Reports({ samples, results, coas }) {
   })();
 
   const reports = [{ key:"activity", label:"📅 Sample Activity", desc:"Samples registered and completed over time" }, { key:"productivity", label:"👷 Productivity", desc:"Per-analyst performance metrics" }, { key:"grade", label:"⚗️ Grade Analysis", desc:"Bauxite grade distribution and correlations" }, { key:"quality", label:"🎯 Quality Metrics", desc:"QC pass rates and compliance data" }];
-  const reportSummary = { totalSamples: filteredSamples.length, totalResults: filteredResults.length, approvedResults: filteredResults.filter((r) => r.status === "Approved").length, issuedCOAs: filteredCoas.filter((c) => c.status === "Issued" || c.status === "Approved").length, pendingSamples: filteredSamples.filter((s) => s.status.includes("Pending")).length };
+  const reportSummary = { totalSamples: filteredSamples.length, totalResults: filteredResults.length, approvedResults: filteredResults.filter((r) => r.status === "Approved").length, issuedCOAs: filteredCoas.filter((c) => c.status === "Issued" || c.status === "Approved").length };
   const getReportPeriodLabel = () => {
     const now = new Date(); if (reportFrequency === "daily") return `Daily report • ${now.toLocaleDateString("en-GB")}`; if (reportFrequency === "weekly") { const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7)); const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); return `Weekly report • ${monday.toLocaleDateString("en-GB")} - ${sunday.toLocaleDateString("en-GB")}`; } if (reportFrequency === "monthly") return `Monthly report • ${now.toLocaleDateString("en-GB", { month:"long", year:"numeric" })}`; if (reportFrequency === "yearly") return `Yearly report • ${now.getFullYear()}`; return "Report";
   };
@@ -1083,10 +1119,10 @@ export function Reports({ samples, results, coas }) {
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Analyst Productivity</div><ResponsiveContainer width="100%" height={280}><BarChart data={analystData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="analyst" fontSize={11} /><YAxis fontSize={12} /><Tooltip /><Legend /><Bar dataKey="samples" fill="#3b82f6" name="Assigned" /><Bar dataKey="completed" fill="#22c55e" name="Completed" /></BarChart></ResponsiveContainer></div>
       )}
       {activeReport === "grade" && (
-        <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Grade Statistics</div>{(() => { const al = gradeData.map((g)=>g.al2o3).filter(Boolean); const mean = al.reduce((a,b)=>a+b,0)/al.length; const std = Math.sqrt(al.reduce((s,v)=>s+(v-mean)**2,0)/al.length); return [['Samples Analyzed', results.length],['Mean Al₂O₃', `${mean.toFixed(2)}%`],['Min Al₂O₃', `${Math.min(...al).toFixed(2)}%`],['Max Al₂O₃', `${Math.max(...al).toFixed(2)}%`],['Std Deviation', `${std.toFixed(2)}%`],['High Grade (>46%)', gradeData.filter((g)=>g.al2o3>46).length]].map(([k,v])=>(<div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #f3f4f6", fontSize:13 }}><span style={{ color:"#6b7280" }}>{k}</span><strong style={{ color:"#111827" }}>{v}</strong></div>)); })()}</div>
+        <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Grade Statistics</div>{(() => { const al = gradeData.map((g)=>g.al2o3).filter(Boolean); const mean = al.reduce((a,b)=>a+b,0)/al.length; const std = Math.sqrt(al.reduce((s,v)=>s+(v-mean)**2,0)/al.length); return [['Samples Analyzed', gradeData.length],['Mean Al₂O₃', `${mean.toFixed(2)}%`],['Min Al₂O₃', `${Math.min(...al).toFixed(2)}%`],['Max Al₂O₃', `${Math.max(...al).toFixed(2)}%`],['Std Deviation', `${std.toFixed(2)}%`],['High Grade (>46%)', gradeData.filter((g)=>g.al2o3>46).length]].map(([k,v])=>(<div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #f3f4f6", fontSize:13 }}><span style={{ color:"#6b7280" }}>{k}</span><strong style={{ color:"#111827" }}>{v}</strong></div>)); })()}</div>
       )}
       {activeReport === "quality" && (
-        <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Quality Metrics</div><div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:20 }}><StatCard label="Overall QC Pass Rate" value="93%" icon="✅" color="#dcfce7" /><StatCard label="Failed QC Samples" value="3" icon="❌" color="#fee2e2" /><StatCard label="Re-analysis Rate" value="4%" icon="🔄" color="#fef3c7" /><StatCard label="Calibration Compliance" value="100%" icon="⚖️" color="#f3e8ff" /></div><ResponsiveContainer width="100%" height={200}><LineChart data={[{m:"Jan",rate:92},{m:"Feb",rate:95},{m:"Mar",rate:88},{m:"Apr",rate:96},{m:"May",rate:93}]}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="m" fontSize={12} /><YAxis domain={[80,100]} fontSize={12} unit="%" /><Tooltip /><Line type="monotone" dataKey="rate" stroke="#22c55e" strokeWidth={2} dot={{r:4}} name="QC Pass Rate %" /></LineChart></ResponsiveContainer></div>
+        <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Quality Metrics</div><div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:20 }}><StatCard label="Overall QC Pass Rate" value={`${qcPassRate}%`} icon="✅" color="#dcfce7" /><StatCard label="Failed QC Samples" value={qcFailedCount} icon="❌" color="#fee2e2" /><StatCard label="Total QC Samples" value={qcSamples.length} icon="🎯" color="#dbeafe" /><StatCard label="Calibration Compliance" value={`${calibrationCompliance}%`} icon="⚖️" color="#f3e8ff" /></div>{qcTrendData.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={qcTrendData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="m" fontSize={12} /><YAxis domain={[0,100]} fontSize={12} unit="%" /><Tooltip /><Line type="monotone" dataKey="rate" stroke="#22c55e" strokeWidth={2} dot={{r:4}} name="QC Pass Rate %" /></LineChart></ResponsiveContainer> : <div style={{ padding:40, textAlign:"center", color:"#9ca3af", fontSize:13 }}>No QC history yet.</div>}</div>
       )}
     </div>
   );

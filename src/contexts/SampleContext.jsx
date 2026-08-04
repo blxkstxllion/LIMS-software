@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useEffect, useState } from "react";
-import { createSample, createResult, createCoa, fetchLimsData, updateSampleStatus, deleteSample, updateResultStatus, updateCoaStatus } from "../services/sampleService";
+import { createSample, createResult, createCoa, fetchLimsData, updateSampleStatus, updateSample, deleteSample, updateResultStatus, updateCoaStatus } from "../services/sampleService";
 
 const SampleContext = createContext(null);
 
@@ -68,6 +68,12 @@ export function SampleProvider({ children }) {
     return updated;
   }, []);
 
+  const onSampleUpdated = useCallback(async (sampleId, payload) => {
+    const updated = await updateSample(sampleId, payload);
+    setSamples((prev) => prev.map((sample) => (sample.id === sampleId ? { ...sample, ...updated } : sample)));
+    return updated;
+  }, []);
+
   const onSampleDeleted = useCallback(async (sampleId) => {
     await deleteSample(sampleId);
     setSamples((prev) => prev.filter((sample) => sample.id !== sampleId));
@@ -85,7 +91,7 @@ export function SampleProvider({ children }) {
     return updated;
   }, []);
 
-  const value = useMemo(() => ({ samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading }), [samples, results, coas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading]);
+  const value = useMemo(() => ({ samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading }), [samples, results, coas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading]);
 
   return <SampleContext.Provider value={value}>{children}</SampleContext.Provider>;
 }
