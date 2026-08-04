@@ -169,6 +169,68 @@ using (var scope = app.Services.CreateScope())
         app.Logger.LogWarning(ex, "Database schema creation skipped");
     }
 
+    // Roles are just names, not credentials — created in every environment, since
+    // authorization policies and AddToRoleAsync depend on them regardless of whether
+    // any users exist yet.
+    try
+    {
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
+        var allRoles = new[] { "admin", "xrf_chemist", "bauxite_engineer", "qa_engineer", "management" };
+        foreach (var roleName in allRoles)
+        {
+            if (!await roleManager.RoleExistsAsync(roleName)) await roleManager.CreateAsync(new ApplicationRole { Name = roleName });
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Role seeding skipped");
+    }
+
+    // A freshly deployed environment has no way to log in at all otherwise — this
+    // creates exactly one admin account, using a password the deployer chose via
+    // Bootstrap:AdminPassword (never a hardcoded/guessable value), and only when the
+    // user table is completely empty. Once any account exists, this can never run
+    // again, so it can't be used to take over an already-initialized system, and the
+    // deployer should unset these variables afterward.
+    try
+    {
+        var bootstrapPassword = app.Configuration["Bootstrap:AdminPassword"];
+        if (!string.IsNullOrWhiteSpace(bootstrapPassword))
+        {
+            var userManagerForBootstrap = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            if (!await userManagerForBootstrap.Users.AnyAsync())
+            {
+                var bootstrapStaffId = app.Configuration["Bootstrap:AdminStaffId"] ?? "ADMIN";
+                var bootstrapEmail = app.Configuration["Bootstrap:AdminEmail"] ?? "admin@gbclims.local";
+                var bootstrapFullName = app.Configuration["Bootstrap:AdminFullName"] ?? "System Administrator";
+
+                var bootstrapUser = new ApplicationUser
+                {
+                    UserName = bootstrapStaffId,
+                    Email = bootstrapEmail,
+                    FullName = bootstrapFullName,
+                    StaffId = bootstrapStaffId,
+                    Department = "IT",
+                    Role = "admin"
+                };
+                var bootstrapResult = await userManagerForBootstrap.CreateAsync(bootstrapUser, bootstrapPassword);
+                if (bootstrapResult.Succeeded)
+                {
+                    await userManagerForBootstrap.AddToRoleAsync(bootstrapUser, "admin");
+                    app.Logger.LogWarning("Bootstrap admin account {StaffId} created — unset Bootstrap:AdminPassword now that this has run.", bootstrapStaffId);
+                }
+                else
+                {
+                    app.Logger.LogWarning("Bootstrap admin creation failed: {Errors}", string.Join(" ", bootstrapResult.Errors.Select(e => e.Description)));
+                }
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Bootstrap admin creation skipped");
+    }
+
     // Predictable, publicly-documented test credentials must never be created outside
     // local development — seeding them in a real deployment would ship a known-password
     // admin account to anyone who finds it.
@@ -177,13 +239,6 @@ using (var scope = app.Services.CreateScope())
         try
         {
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
-
-            var seedRoles = new[] { "admin", "xrf_chemist", "bauxite_engineer", "qa_engineer", "management" };
-            foreach (var roleName in seedRoles)
-            {
-                if (!await roleManager.RoleExistsAsync(roleName)) await roleManager.CreateAsync(new ApplicationRole { Name = roleName });
-            }
 
             var seedUsers = new[]
             {
