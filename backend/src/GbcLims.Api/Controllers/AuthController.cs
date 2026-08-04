@@ -74,7 +74,9 @@ public class AuthController : ControllerBase
 
     private async Task<string> GenerateJwtToken(ApplicationUser user)
     {
-        var secret = _configuration["Jwt:Secret"] ?? "super-secret-key-for-lims-development";
+        // Program.cs fails fast at startup if Jwt:Secret is missing or still a
+        // placeholder, so it's guaranteed valid here — no fallback to a known string.
+        var secret = _configuration["Jwt:Secret"] ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
         var issuer = _configuration["Jwt:Issuer"] ?? "https://localhost";
         var audience = _configuration["Jwt:Audience"] ?? "https://localhost";
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));

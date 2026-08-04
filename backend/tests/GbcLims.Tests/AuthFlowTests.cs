@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -19,8 +20,24 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
 
     public AuthFlowTests(WebApplicationFactory<Program> factory)
     {
+        // Program.cs reads Jwt:Secret into a local variable before builder.Build() runs
+        // (to configure JWT Bearer validation), which is before WithWebHostBuilder's
+        // ConfigureAppConfiguration override gets layered in — so a config-override
+        // approach here would sign tokens with one secret and validate them against
+        // another. An environment variable is visible from the very first line of
+        // Program.cs, so both the early (validation setup) and late (per-request
+        // signing) reads agree. Tests supply their own so they don't depend on
+        // `dotnet user-secrets` being configured on whatever machine runs them.
+        Environment.SetEnvironmentVariable("Jwt__Secret", "test-only-secret-never-used-outside-automated-tests-0123456789");
+
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            // Seeding of the test accounts this suite logs in with is gated to
+            // Development (never runs in a real deployment); pin the test host there
+            // explicitly rather than relying on whatever ASPNETCORE_ENVIRONMENT the
+            // test runner happens to have set.
+            builder.UseEnvironment("Development");
+
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
