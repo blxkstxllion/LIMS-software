@@ -3,9 +3,10 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { ROLE_LABELS, ROLE_COLORS, PERMISSIONS } from "../constants/lims";
 import { formatDate, statusColor, statusBg, priorityColor, priorityBg } from "../utils/lims";
 import { Badge, Modal, Input, Select, Textarea, Button, StatCard } from "../components/shared";
-import { fetchUsers, createUser, updateUser, updateUserStatus, deleteUser, fetchAuditLogs } from "../services/userService";
+import { fetchUsers, createUser, updateUser, updateUserStatus, deleteUser, resetUserPassword, fetchAuditLogs } from "../services/userService";
 import { fetchFiles, uploadFile, downloadFile, deleteFile } from "../services/fileService";
 import { fetchQcSamples, createQcSample } from "../services/qcService";
+import { fetchSamplesPaged } from "../services/sampleService";
 export function SampleRegistration({ user, onSampleAdded, showToast }) {
   const [form, setForm] = useState({ origin:"", sampleSource:"", location:"", quantity:"", unit:"kg", tonnage:"", priority:"Medium", submittedBy:"", receivedBy:user.name, batchNumber:"", notes:"", sampleFrequency:"", dailyTime:"", sublotNumber:"" });
   const [generatedId, setGeneratedId] = useState("");
@@ -130,21 +131,52 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
   const [selected, setSelected] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(null);
+  const [pagedSamples, setPagedSamples] = useState([]);
+  const [pagedTotal, setPagedTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pagedLoading, setPagedLoading] = useState(true);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const pageSize = 25;
 
   const perm = PERMISSIONS[user.role];
   const canEdit = (s) => perm.edit === "all" || (perm.edit === "own" && s.createdBy === user.staffId);
   const canDelete = (s) => perm.delete === "all" || (perm.delete === "own" && s.createdBy === user.staffId);
 
-  const filtered = useMemo(() => samples.filter((s) => {
-    const q = search.toLowerCase();
-    const matchQ = !q || s.id.toLowerCase().includes(q) || s.location.toLowerCase().includes(q) || s.origin.toLowerCase().includes(q);
-    const matchS = !filterStatus || s.status === filterStatus;
-    const matchP = !filterPriority || s.priority === filterPriority;
-    return matchQ && matchS && matchP;
-  }), [samples, search, filterStatus, filterPriority]);
-
+  // Cheap to derive from the already-loaded shared sample list, even though the table
+  // itself is now paged server-side — this just populates filter dropdown options.
   const allStatuses = [...new Set(samples.map((s)=>s.status))];
   const allPriorities = ["Low","Medium","High","Urgent"];
+  const totalPages = Math.max(1, Math.ceil(pagedTotal / pageSize));
+
+  const loadPage = useCallback(() => {
+    setPagedLoading(true);
+    fetchSamplesPaged({ search, status: filterStatus, priority: filterPriority, page, pageSize })
+      .then((res) => { setPagedSamples(res.items); setPagedTotal(res.total); })
+      .catch((error) => { console.error("Failed to load samples", error); showToast("Unable to load samples.", "error"); })
+      .finally(() => setPagedLoading(false));
+  }, [search, filterStatus, filterPriority, page]);
+
+  // Debounced only for search-as-you-type; filter dropdowns and page changes fetch
+  // immediately since those aren't fired on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(loadPage, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [loadPage]);
+
+  useEffect(() => {
+    if (!selected) return;
+    setHistoryLoading(true);
+    fetchAuditLogs({ sampleId: selected.id }).then(setHistory).catch((error) => console.error("Failed to load sample history", error)).finally(() => setHistoryLoading(false));
+  }, [selected?.id]);
+
+  // Resetting to page 1 lives in these handlers (not a useEffect watching the filter
+  // state) so that changing a filter is one state update, not a render followed by an
+  // effect-triggered second one.
+  const updateSearch = (v) => { setSearch(v); setPage(1); };
+  const updateFilterStatus = (v) => { setFilterStatus(v); setPage(1); };
+  const updateFilterPriority = (v) => { setFilterPriority(v); setPage(1); };
+  const clearFilters = () => { setSearch(""); setFilterStatus(""); setFilterPriority(""); setPage(1); };
 
   const handleDelete = async (s) => {
     if (!canDelete(s)) { showToast("You don't have permission to delete this sample.", "error"); return; }
@@ -153,6 +185,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
         await onSampleDeleted(s.id);
         showToast(`Sample ${s.id} deleted.`, "success");
         setSelected(null);
+        loadPage();
       } catch (error) {
         showToast(error.message || "Unable to delete sample.", "error");
       }
@@ -165,7 +198,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
       // Status moves through its own transition-checked endpoint; only send it if it
       // actually changed, since re-sending an unchanged status can be rejected as an
       // invalid self-transition for states that don't allow looping (most of them).
-      const original = samples.find((s) => s.id === editData.id);
+      const original = pagedSamples.find((s) => s.id === editData.id) || selected;
       if (original && original.status !== editData.status) {
         await onSampleStatusChanged(editData.id, editData.status);
       }
@@ -179,6 +212,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
       });
       showToast("Sample updated successfully.", "success");
       setEditMode(false); setSelected(editData);
+      loadPage();
     } catch (error) {
       showToast(error.message || "Unable to update sample.", "error");
     }
@@ -189,20 +223,20 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
       <div style={{ marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
         <div>
           <h1 style={{ fontSize:22, fontWeight:800, color:"#111827", margin:0 }}>Sample Management</h1>
-          <p style={{ color:"#6b7280", fontSize:14, margin:"4px 0 0" }}>{filtered.length} of {samples.length} samples</p>
+          <p style={{ color:"#6b7280", fontSize:14, margin:"4px 0 0" }}>{pagedLoading ? "Loading…" : `${pagedTotal} sample${pagedTotal===1?"":"s"}`}</p>
         </div>
       </div>
       <div style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:16, marginBottom:20, display:"flex", gap:12, flexWrap:"wrap", alignItems:"center" }}>
-        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search Sample ID, location, origin…" style={{ flex:"1 1 200px", padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none" }} />
-        <select value={filterStatus} onChange={(e)=>setFilterStatus(e.target.value)} style={{ padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none" }}>
+        <input value={search} onChange={(e)=>updateSearch(e.target.value)} placeholder="🔍 Search Sample ID, location, origin…" style={{ flex:"1 1 200px", padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none" }} />
+        <select value={filterStatus} onChange={(e)=>updateFilterStatus(e.target.value)} style={{ padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none" }}>
           <option value="">All Statuses</option>
           {allStatuses.map((s)=><option key={s}>{s}</option>)}
         </select>
-        <select value={filterPriority} onChange={(e)=>setFilterPriority(e.target.value)} style={{ padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none" }}>
+        <select value={filterPriority} onChange={(e)=>updateFilterPriority(e.target.value)} style={{ padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none" }}>
           <option value="">All Priorities</option>
           {allPriorities.map((p)=><option key={p}>{p}</option>)}
         </select>
-        <button onClick={()=>{setSearch("");setFilterStatus("");setFilterPriority("");}} style={{ padding:"8px 14px", background:"#f3f4f6", border:"1.5px solid #e5e7eb", borderRadius:8, cursor:"pointer", fontSize:13 }}>Clear</button>
+        <button onClick={clearFilters} style={{ padding:"8px 14px", background:"#f3f4f6", border:"1.5px solid #e5e7eb", borderRadius:8, cursor:"pointer", fontSize:13 }}>Clear</button>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
         <div style={{ overflowX:"auto" }}>
@@ -211,7 +245,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
               {["Sample ID","Date","Origin","Source","Location","Qty","Priority","Status","Assigned To","Actions"].map((h)=>(<th key={h} style={{ textAlign:"left", padding:"11px 12px", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb", whiteSpace:"nowrap" }}>{h}</th>))}
             </tr></thead>
             <tbody>
-              {filtered.slice(0,25).map((s,i)=>(
+              {pagedSamples.map((s,i)=>(
                 <tr key={s.id} style={{ borderBottom:"1px solid #f3f4f6", background: i%2===0?"#fff":"#fafafa" }}>
                   <td style={{ padding:"10px 12px" }}><span onClick={()=>setSelected(s)} style={{ fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", cursor:"pointer" }}>{s.id}</span></td>
                   <td style={{ padding:"10px 12px", color:"#6b7280", whiteSpace:"nowrap" }}>{formatDate(s.dateReceived)}</td>
@@ -231,10 +265,19 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
                   </td>
                 </tr>
               ))}
+              {!pagedLoading && pagedSamples.length === 0 && (
+                <tr><td colSpan={10} style={{ padding:"24px 12px", textAlign:"center", color:"#9ca3af" }}>No samples match.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
-        {filtered.length > 25 && <div style={{ padding:"12px 16px", fontSize:13, color:"#6b7280", borderTop:"1px solid #f3f4f6", textAlign:"center" }}>Showing 25 of {filtered.length} results</div>}
+        <div style={{ padding:"12px 16px", borderTop:"1px solid #f3f4f6", display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13, color:"#6b7280" }}>
+          <span>Page {page} of {totalPages}</span>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={()=>setPage((p)=>Math.max(1,p-1))} disabled={page<=1} style={{ padding:"5px 12px", background: page<=1?"#f3f4f6":"#eff6ff", border:"none", borderRadius:6, cursor: page<=1?"not-allowed":"pointer", color: page<=1?"#9ca3af":"#1e3a8a", fontWeight:600 }}>← Prev</button>
+            <button onClick={()=>setPage((p)=>Math.min(totalPages,p+1))} disabled={page>=totalPages} style={{ padding:"5px 12px", background: page>=totalPages?"#f3f4f6":"#eff6ff", border:"none", borderRadius:6, cursor: page>=totalPages?"not-allowed":"pointer", color: page>=totalPages?"#9ca3af":"#1e3a8a", fontWeight:600 }}>Next →</button>
+          </div>
+        </div>
       </div>
       {selected && !editMode && (
         <Modal title={`Sample: ${selected.id}`} onClose={()=>setSelected(null)}>
@@ -247,6 +290,23 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
             ))}
           </div>
           {selected.notes && <div style={{ marginTop:12, padding:"10px 14px", background:"#fefce8", border:"1px solid #fef08a", borderRadius:8 }}><strong style={{ fontSize:12 }}>Notes:</strong> <span style={{ fontSize:13, color:"#374151" }}>{selected.notes}</span></div>}
+          <div style={{ marginTop:16 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Activity History</div>
+            {historyLoading ? (
+              <div style={{ fontSize:13, color:"#9ca3af" }}>Loading…</div>
+            ) : history.length === 0 ? (
+              <div style={{ fontSize:13, color:"#9ca3af" }}>No recorded activity yet.</div>
+            ) : (
+              <div style={{ maxHeight:180, overflowY:"auto", border:"1px solid #f3f4f6", borderRadius:8 }}>
+                {history.map((h)=>(
+                  <div key={h.id} style={{ padding:"8px 12px", borderBottom:"1px solid #f3f4f6", fontSize:12 }}>
+                    <div style={{ color:"#111827" }}>{h.details}</div>
+                    <div style={{ color:"#9ca3af", marginTop:2 }}>{h.userName} · {formatDate(h.timestamp)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ display:"flex", gap:12, marginTop:20 }}>
             {canEdit(selected) && <Button onClick={()=>{setEditData({...selected});setEditMode(true);}} variant="ghost">✏️ Edit Sample</Button>}
             {canDelete(selected) && <Button onClick={()=>handleDelete(selected)} variant="danger">🗑 Delete</Button>}
@@ -874,12 +934,13 @@ export function QCManagement({ user, samples, showToast }) {
   );
 }
 
-export function FileManagement({ user, showToast }) {
+export function FileManagement({ user, samples, showToast }) {
   const [files, setFiles] = useState([]);
   const [filesLoading, setFilesLoading] = useState(true);
   const [drag, setDrag] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
+  const [uploadSampleId, setUploadSampleId] = useState("");
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -891,7 +952,7 @@ export function FileManagement({ user, showToast }) {
     if (!selected.length) return;
     setUploading(true);
     try {
-      const uploaded = await Promise.all(selected.map((f) => uploadFile(f, { group: "General" })));
+      const uploaded = await Promise.all(selected.map((f) => uploadFile(f, { group: "General", sampleId: uploadSampleId || undefined })));
       setFiles((p)=>[...uploaded, ...p]);
       showToast(`${uploaded.length} file(s) uploaded successfully.`, "success");
     } catch (error) {
@@ -945,7 +1006,13 @@ export function FileManagement({ user, showToast }) {
         <div style={{ fontSize:15, fontWeight:600, color:"#374151", marginBottom:4 }}>{uploading ? "Uploading…" : "Drag & Drop files here"}</div>
         <div style={{ fontSize:13, color:"#9ca3af", marginBottom:16 }}>Supported: PDF, Excel, Word, Images, CSV · Max 50MB per file</div>
         <input ref={fileInputRef} type="file" multiple onChange={handleFileInputChange} style={{ display:"none" }} />
-        <Button onClick={()=>fileInputRef.current?.click()} variant="primary" disabled={uploading}>📤 Upload Files</Button>
+        <div style={{ display:"flex", gap:10, justifyContent:"center", alignItems:"center", flexWrap:"wrap" }}>
+          <select value={uploadSampleId} onChange={(e)=>setUploadSampleId(e.target.value)} style={{ padding:"8px 12px", border:"1.5px solid #d1d5db", borderRadius:8, fontSize:13, outline:"none", background:"#fff" }}>
+            <option value="">Attach to sample (optional)</option>
+            {(samples||[]).map((s)=>(<option key={s.id} value={s.id}>{s.id} — {s.origin}</option>))}
+          </select>
+          <Button onClick={()=>fileInputRef.current?.click()} variant="primary" disabled={uploading}>📤 Upload Files</Button>
+        </div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, marginBottom:24 }}>
         {[['PDF','📄','#fee2e2'],['Excel','📊','#dcfce7'],['Image','🖼️','#dbeafe'],['CSV','📋','#fef3c7'],['Other','📁','#f3f4f6']].map(([type,icon,bg])=>(<div key={type} style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:"14px 16px", textAlign:"center" }}><div style={{ fontSize:24, marginBottom:4 }}>{icon}</div><div style={{ fontSize:18, fontWeight:700, color:"#111827" }}>{files.filter((f)=>f.type===type).length}</div><div style={{ fontSize:12, color:"#6b7280" }}>{type} files</div></div>))}
@@ -955,7 +1022,7 @@ export function FileManagement({ user, showToast }) {
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-          <thead><tr style={{ background:"#f9fafb" }}>{["File","Type","Size","Group","Uploaded By","Date","Actions"].map((h)=>(<th key={h} style={{ padding:"10px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb" }}>{h}</th>))}</tr></thead>
+          <thead><tr style={{ background:"#f9fafb" }}>{["File","Type","Size","Group","Sample","Uploaded By","Date","Actions"].map((h)=>(<th key={h} style={{ padding:"10px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb" }}>{h}</th>))}</tr></thead>
           <tbody>
             {filtered.map((f,i)=>(
               <tr key={f.id} style={{ borderBottom:"1px solid #f3f4f6", background: i%2===0?"#fff":"#fafafa" }}>
@@ -963,6 +1030,7 @@ export function FileManagement({ user, showToast }) {
                 <td style={{ padding:"10px 12px" }}><Badge text={f.type} color="#1e40af" bg="#dbeafe" small /></td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{f.size}</td>
                 <td style={{ padding:"10px 12px", color:"#374151" }}>{f.group}</td>
+                <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, color:"#6b7280" }}>{f.sampleId||"—"}</td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{f.uploadedBy}</td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{formatDate(f.date)}</td>
                 <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>handleDownload(f)} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>⬇ Download</button>{(user.role === "admin" || f.uploadedBy === user.name) && <button onClick={()=>handleDelete(f)} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>🗑</button>}</div></td>
@@ -1135,6 +1203,8 @@ export function AdminPanel({ user, showToast }) {
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [newUser, setNewUser] = useState({ staffId:"", name:"", email:"", role:"xrf_chemist", department:"Laboratory", password:"", status:"Active" });
+  const [resetPasswordUser, setResetPasswordUser] = useState(null);
+  const [resetPasswordForm, setResetPasswordForm] = useState({ newPassword:"", confirmPassword:"" });
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditSearch, setAuditSearch] = useState("");
 
@@ -1195,6 +1265,20 @@ export function AdminPanel({ user, showToast }) {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!resetPasswordForm.newPassword || resetPasswordForm.newPassword !== resetPasswordForm.confirmPassword) {
+      showToast("Passwords must match and can't be empty.", "error"); return;
+    }
+    try {
+      await resetUserPassword(resetPasswordUser.staffId, resetPasswordForm.newPassword);
+      showToast(`Password reset for ${resetPasswordUser.name}. They'll need to log in again.`, "success");
+      setResetPasswordUser(null); setResetPasswordForm({ newPassword:"", confirmPassword:"" });
+    } catch (error) {
+      console.error("Failed to reset password", error);
+      showToast(error.message || "Unable to reset password.", "error");
+    }
+  };
+
   const filteredLogs = auditLogs.filter((l) => !auditSearch || l.userName.toLowerCase().includes(auditSearch.toLowerCase()) || l.action.toLowerCase().includes(auditSearch.toLowerCase()) || l.module.toLowerCase().includes(auditSearch.toLowerCase()));
   const tabs = [['users','👥 Users'],['settings','⚙️ Settings'],['audit','📋 Audit Logs'],['stats','📊 Statistics']];
 
@@ -1224,7 +1308,7 @@ export function AdminPanel({ user, showToast }) {
                     <td style={{ padding:"10px 12px", color:"#374151" }}>{u.department}</td>
                     <td style={{ padding:"10px 12px" }}><Badge text={u.status||"Active"} color={u.status=== "Active"?"#166534":"#991b1b"} bg={u.status=== "Active"?"#dcfce7":"#fee2e2"} small /></td>
                     <td style={{ padding:"10px 12px", color:"#9ca3af", fontSize:12 }}>{formatDate(u.lastLogin)}</td>
-                    <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>setEditUser({...u})} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>Edit</button><button onClick={()=>toggleUserStatus(u)} style={{ padding:"3px 8px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>{u.status === "Active" ? "Suspend" : "Activate"}</button>{u.staffId !== user.staffId && <button onClick={()=>removeUser(u)} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>Delete</button>}</div></td>
+                    <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>setEditUser({...u})} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>Edit</button><button onClick={()=>setResetPasswordUser(u)} style={{ padding:"3px 8px", background:"#f3e8ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#6b21a8", fontWeight:600 }}>Reset Password</button><button onClick={()=>toggleUserStatus(u)} style={{ padding:"3px 8px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>{u.status === "Active" ? "Suspend" : "Activate"}</button>{u.staffId !== user.staffId && <button onClick={()=>removeUser(u)} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>Delete</button>}</div></td>
                   </tr>
                 ))}
               </tbody>
@@ -1287,6 +1371,17 @@ export function AdminPanel({ user, showToast }) {
           <div style={{ display:"flex", gap:12 }}>
             <Button onClick={saveEdit} variant="success">💾 Save Changes</Button>
             <Button onClick={()=>setEditUser(null)} variant="secondary">Cancel</Button>
+          </div>
+        </Modal>
+      )}
+      {resetPasswordUser && (
+        <Modal title={`Reset Password: ${resetPasswordUser.staffId}`} onClose={()=>{setResetPasswordUser(null);setResetPasswordForm({ newPassword:"", confirmPassword:"" });}}>
+          <p style={{ fontSize:13, color:"#6b7280", marginTop:0 }}>Sets a new password for {resetPasswordUser.name} and signs them out of any active session.</p>
+          <Input label="New Password" value={resetPasswordForm.newPassword} onChange={(v)=>setResetPasswordForm((p)=>({...p,newPassword:v}))} type="password" required />
+          <Input label="Confirm Password" value={resetPasswordForm.confirmPassword} onChange={(v)=>setResetPasswordForm((p)=>({...p,confirmPassword:v}))} type="password" required />
+          <div style={{ display:"flex", gap:12 }}>
+            <Button onClick={handleResetPassword} variant="success">🔑 Reset Password</Button>
+            <Button onClick={()=>{setResetPasswordUser(null);setResetPasswordForm({ newPassword:"", confirmPassword:"" });}} variant="secondary">Cancel</Button>
           </div>
         </Modal>
       )}

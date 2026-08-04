@@ -143,6 +143,42 @@ public class UsersController : ControllerBase
         }
     }
 
+    // Uses Identity's reset-token flow (generate + immediately redeem) rather than
+    // ChangePasswordAsync, which requires knowing the current password — the whole
+    // point here is letting an admin recover an account whose password nobody
+    // remembers. Also revokes the refresh token: a password reset should force
+    // re-authentication, not leave whatever session was already open still valid.
+    [HttpPatch("{staffId}/password")]
+    public async Task<IActionResult> ResetPassword(string staffId, [FromBody] ResetPasswordRequest request)
+    {
+        try
+        {
+            var user = await _userManager.Users.SingleOrDefaultAsync(u => u.StaffId == staffId);
+            if (user is null) return NotFound();
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+            if (!result.Succeeded)
+            {
+                return BadRequest(new { message = string.Join(" ", result.Errors.Select(e => e.Description)) });
+            }
+
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await _userManager.UpdateAsync(user);
+
+            var currentUserId = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            await _auditLogService.LogAsync("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"Password reset for user {user.StaffId}", currentUserId, User.Identity?.Name);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Password reset failed for staffId {StaffId}", staffId);
+            return StatusCode(500, new { message = "Unable to reset password at the moment." });
+        }
+    }
+
     [HttpDelete("{staffId}")]
     public async Task<IActionResult> Delete(string staffId)
     {
@@ -188,6 +224,7 @@ public class UsersController : ControllerBase
     public record CreateUserRequest(string StaffId, string FullName, string Email, string Password, string Role, string Department);
     public record UpdateUserRequest(string FullName, string Email, string Role, string Department);
     public record UpdateUserStatusRequest(string Status);
+    public record ResetPasswordRequest(string NewPassword);
 
     public class UserDto
     {

@@ -49,10 +49,17 @@ public class AttachmentsController : ControllerBase
     {
         try
         {
-            var query = _context.Attachments.AsQueryable();
-            if (!string.IsNullOrWhiteSpace(sampleId) && Guid.TryParse(sampleId, out var sampleGuid))
+            var query = _context.Attachments.Include(a => a.Sample).AsQueryable();
+            if (!string.IsNullOrWhiteSpace(sampleId))
             {
-                query = query.Where(a => a.SampleId == sampleGuid);
+                if (Guid.TryParse(sampleId, out var sampleGuid))
+                {
+                    query = query.Where(a => a.SampleId == sampleGuid);
+                }
+                else
+                {
+                    query = query.Where(a => a.Sample != null && a.Sample.SampleNumber == sampleId);
+                }
             }
 
             var attachments = await query.OrderByDescending(a => a.UploadedAt).ToListAsync();
@@ -76,9 +83,10 @@ public class AttachmentsController : ControllerBase
             if (request.File.Length > MaxFileSizeBytes) return BadRequest(new { message = "File exceeds the 50MB limit." });
 
             Guid? sampleId = null;
+            Sample? sample = null;
             if (!string.IsNullOrWhiteSpace(request.SampleId))
             {
-                var sample = Guid.TryParse(request.SampleId, out var guid)
+                sample = Guid.TryParse(request.SampleId, out var guid)
                     ? await _context.Samples.FirstOrDefaultAsync(s => s.Id == guid && !s.IsDeleted)
                     : await _context.Samples.FirstOrDefaultAsync(s => s.SampleNumber == request.SampleId && !s.IsDeleted);
                 if (sample is null) return BadRequest(new { message = "Sample not found." });
@@ -102,6 +110,7 @@ public class AttachmentsController : ControllerBase
             {
                 Id = Guid.NewGuid(),
                 SampleId = sampleId,
+                Sample = sample,
                 FileName = request.File.FileName,
                 StoredFileName = storedFileName,
                 ContentType = string.IsNullOrWhiteSpace(request.File.ContentType) ? "application/octet-stream" : request.File.ContentType,
@@ -186,7 +195,7 @@ public class AttachmentsController : ControllerBase
         public AttachmentDto(Attachment attachment)
         {
             Id = attachment.Id;
-            SampleId = attachment.SampleId;
+            SampleId = attachment.Sample?.SampleNumber ?? string.Empty;
             FileName = attachment.FileName;
             ContentType = attachment.ContentType;
             SizeInBytes = attachment.SizeInBytes;
@@ -196,7 +205,7 @@ public class AttachmentsController : ControllerBase
         }
 
         public Guid Id { get; set; }
-        public Guid? SampleId { get; set; }
+        public string SampleId { get; set; } = string.Empty;
         public string FileName { get; set; } = string.Empty;
         public string ContentType { get; set; } = string.Empty;
         public long SizeInBytes { get; set; }

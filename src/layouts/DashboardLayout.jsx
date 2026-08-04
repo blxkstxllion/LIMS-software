@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, FileText, Target, FolderOpen, TrendingUp, Settings, Menu, Bell, LogOut } from "lucide-react";
 import { ROLE_LABELS, ROLE_COLORS, SIDEBAR_MENU } from "../constants/lims";
 import { Watermark } from "../pages/Watermark";
+import { fetchNotifications } from "../services/userService";
+import { formatDate } from "../utils/lims";
 
 const iconMap = { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, FileText, Target, FolderOpen, TrendingUp, Settings };
 
 export default function DashboardLayout({ user, onLogout, children, activePage, onNavigate }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    fetchNotifications().then(setNotifications).catch((error) => console.error("Failed to load notifications", error));
+  }, []);
 
   const canAccess = (menuItem) => menuItem.roles.includes("all") || menuItem.roles.includes(user?.role);
 
@@ -45,9 +53,25 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
           <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{sidebarOpen ? "Laboratory Information Management System" : "GBC LIMS"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <button style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#111827" }}>
-                <Bell size={18} />
-              </button>
+              <div style={{ position: "relative" }}>
+                <button onClick={() => setNotifOpen(!notifOpen)} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#111827", position: "relative" }}>
+                  <Bell size={18} />
+                  {notifications.length > 0 && <span style={{ position: "absolute", top: -3, right: -3, background: "#991b1b", color: "#fff", borderRadius: "9999px", fontSize: 10, fontWeight: 700, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{notifications.length}</span>}
+                </button>
+                {notifOpen && (
+                  <div style={{ position: "absolute", right: 0, top: "110%", background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "8px 0", minWidth: 320, maxWidth: 380, maxHeight: 400, overflowY: "auto", boxShadow: "0 4px 20px #0001", zIndex: 100 }}>
+                    <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: "#111827", borderBottom: "1px solid #f3f4f6" }}>Notifications</div>
+                    {notifications.length === 0 ? (
+                      <div style={{ padding: "20px 16px", fontSize: 13, color: "#9ca3af", textAlign: "center" }}>Nothing new.</div>
+                    ) : notifications.map((n) => (
+                      <div key={n.id} style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6", fontSize: 13 }}>
+                        <div style={{ color: "#111827" }}>{n.message}</div>
+                        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{n.actorName} · {formatDate(n.createdAt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div style={{ position: "relative" }}>
                 <div onClick={() => setDropdownOpen(!dropdownOpen)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "6px 12px", borderRadius: 8, background: dropdownOpen ? "#f3f4f6" : "transparent" }}>
                   <div style={{ width: 34, height: 34, borderRadius: "50%", background: ROLE_COLORS[user.role] || "#1e3a8a", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13 }}>

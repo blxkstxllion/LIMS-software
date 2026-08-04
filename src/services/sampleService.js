@@ -29,6 +29,27 @@ function normalizeCoa(coa) {
   };
 }
 
+export async function fetchSamplesPaged({ search, status, priority, page = 1, pageSize = 25 } = {}) {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (status) params.set("status", status);
+  if (priority) params.set("priority", priority);
+  params.set("page", page);
+  params.set("pageSize", pageSize);
+  const response = await request(`/api/samples?${params.toString()}`);
+  return {
+    items: (response.items || []).map((sample) => ({
+      id: sample.sampleNumber,
+      ...sample,
+      status: sample.status,
+      dateReceived: sample.dateReceived?.split("T")[0],
+    })),
+    total: response.total,
+    page: response.page,
+    pageSize: response.pageSize,
+  };
+}
+
 export async function fetchLimsData() {
   const [samples, results, coas] = await Promise.all([
     request("/api/samples"),

@@ -44,8 +44,26 @@ export async function deleteUser(staffId) {
   return request(`/api/users/${staffId}`, { method: "DELETE" });
 }
 
-export async function fetchAuditLogs() {
-  const logs = await request("/api/auditlogs");
+export async function resetUserPassword(staffId, newPassword) {
+  return request(`/api/users/${staffId}/password`, {
+    method: "PATCH",
+    body: JSON.stringify({ newPassword }),
+  });
+}
+
+export async function fetchNotifications() {
+  const notifications = await request("/api/notifications");
+  return (notifications || []).map((n) => ({
+    id: n.id,
+    message: n.message,
+    actorName: n.actorName,
+    createdAt: n.createdAt,
+  }));
+}
+
+export async function fetchAuditLogs({ sampleId } = {}) {
+  const query = sampleId ? `?sampleId=${encodeURIComponent(sampleId)}` : "";
+  const logs = await request(`/api/auditlogs${query}`);
   return (logs || []).map((log) => ({
     id: log.id,
     timestamp: log.timestamp,
@@ -54,6 +72,7 @@ export async function fetchAuditLogs() {
     action: log.action,
     module: log.module,
     recordId: log.recordId,
+    details: log.details,
     ipAddress: log.ipAddress,
   }));
 }
