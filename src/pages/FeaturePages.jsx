@@ -869,6 +869,7 @@ export function FileManagement({ user, showToast }) {
   const [drag, setDrag] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchFiles().then(setFiles).catch((error) => { console.error("Failed to load files", error); showToast("Unable to load files.", "error"); }).finally(() => setFilesLoading(false));
@@ -893,6 +894,11 @@ export function FileManagement({ user, showToast }) {
   const handleDrop = (e) => {
     e.preventDefault(); setDrag(false);
     uploadFiles(e.dataTransfer.files);
+  };
+
+  const handleFileInputChange = (e) => {
+    uploadFiles(e.target.files);
+    e.target.value = "";
   };
 
   const handleDownload = async (f) => {
@@ -926,7 +932,9 @@ export function FileManagement({ user, showToast }) {
       <div onDragOver={(e)=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={handleDrop} style={{ border:`2px dashed ${drag?"#1e3a8a":"#d1d5db"}`, borderRadius:12, padding:36, textAlign:"center", background: drag?"#eff6ff":"#f9fafb", marginBottom:24, transition:"all 0.15s" }}>
         <div style={{ fontSize:40, marginBottom:10 }}>📁</div>
         <div style={{ fontSize:15, fontWeight:600, color:"#374151", marginBottom:4 }}>{uploading ? "Uploading…" : "Drag & Drop files here"}</div>
-        <div style={{ fontSize:13, color:"#9ca3af" }}>Supported: PDF, Excel, Word, Images, CSV · Max 50MB per file</div>
+        <div style={{ fontSize:13, color:"#9ca3af", marginBottom:16 }}>Supported: PDF, Excel, Word, Images, CSV · Max 50MB per file</div>
+        <input ref={fileInputRef} type="file" multiple onChange={handleFileInputChange} style={{ display:"none" }} />
+        <Button onClick={()=>fileInputRef.current?.click()} variant="primary" disabled={uploading}>📤 Upload Files</Button>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, marginBottom:24 }}>
         {[['PDF','📄','#fee2e2'],['Excel','📊','#dcfce7'],['Image','🖼️','#dbeafe'],['CSV','📋','#fef3c7'],['Other','📁','#f3f4f6']].map(([type,icon,bg])=>(<div key={type} style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:"14px 16px", textAlign:"center" }}><div style={{ fontSize:24, marginBottom:4 }}>{icon}</div><div style={{ fontSize:18, fontWeight:700, color:"#111827" }}>{files.filter((f)=>f.type===type).length}</div><div style={{ fontSize:12, color:"#6b7280" }}>{type} files</div></div>))}

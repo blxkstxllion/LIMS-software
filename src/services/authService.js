@@ -2,27 +2,30 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5152
 
 let refreshPromise = null;
 
-function buildHeaders(headers = {}) {
+// Shared by every authenticated call (JSON, upload, download): attaches the current
+// access token, and on a 401 — which after login mostly means "the 1-hour access token
+// expired," not "you're not logged in" — refreshes it once and retries transparently.
+// Previously only the JSON path (request()) did this; apiUpload/apiDownload used a bare
+// fetch, so a file upload made after the access token expired failed outright with 401
+// instead of quietly refreshing like every other call already does.
+async function fetchWithAuthRetry(path, options = {}, isRetry = false) {
   const token = localStorage.getItem("gbc_access_token");
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...headers,
-  };
+  const headers = { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+
+  if (response.status === 401 && !isRetry) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return fetchWithAuthRetry(path, options, true);
+  }
+
+  return response;
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     ...options,
-    headers: buildHeaders(options.headers),
+    headers: { "Content-Type": "application/json", ...options.headers },
   });
-
-  if (response.status === 401 && !options.__isRefresh) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      return request(path, { ...options, __isRefresh: true });
-    }
-  }
 
   if (!response.ok) {
     const text = await response.text();
@@ -113,17 +116,11 @@ export async function apiRequest(path, options = {}) {
   return request(path, options);
 }
 
-// Separate from apiRequest because buildHeaders() always forces
-// "Content-Type: application/json" — fine for JSON bodies, but a multipart upload
-// needs the browser to set its own Content-Type with the multipart boundary, which
-// only happens if the header is left unset entirely.
+// Separate from apiRequest because forcing "Content-Type: application/json" (as request()
+// does) would break a multipart upload — the browser needs to set its own Content-Type
+// with the multipart boundary, which only happens if the header is left unset entirely.
 export async function apiUpload(path, formData) {
-  const token = localStorage.getItem("gbc_access_token");
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
+  const response = await fetchWithAuthRetry(path, { method: "POST", body: formData });
 
   if (!response.ok) {
     const text = await response.text();
@@ -137,10 +134,7 @@ export async function apiUpload(path, formData) {
 // Bearer token; the response is turned into a blob URL just long enough to trigger the
 // browser's save dialog, then released.
 export async function apiDownload(path, fileName) {
-  const token = localStorage.getItem("gbc_access_token");
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const response = await fetchWithAuthRetry(path, {});
 
   if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
 
