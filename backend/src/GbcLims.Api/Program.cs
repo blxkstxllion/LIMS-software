@@ -77,12 +77,17 @@ builder.Services.AddAuthentication(options =>
         {
             OnAuthenticationFailed = context =>
             {
-                Console.WriteLine($"JWT auth failed: {context.Exception.Message}");
+                context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Jwt").LogWarning(context.Exception, "JWT authentication failed");
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
-                Console.WriteLine($"JWT validated for user: {context.Principal?.Identity?.Name}");
+                // Debug-level: this fires on every authenticated request, so it stays
+                // silent by default (appsettings' default log level is Information) and
+                // is only noisy when someone explicitly turns on Debug logging.
+                context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Jwt").LogDebug("JWT validated for user: {User}", context.Principal?.Identity?.Name);
                 return Task.CompletedTask;
             }
         };
@@ -122,7 +127,9 @@ app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
     {
-        Console.WriteLine($"Route debug: {context.Request.Method} {context.Request.Path} -> endpoint {context.GetEndpoint()?.DisplayName ?? "<null>"}");
+        // Debug-level: fires on every API request, silent unless Debug logging is
+        // explicitly enabled.
+        app.Logger.LogDebug("Route: {Method} {Path} -> endpoint {Endpoint}", context.Request.Method, context.Request.Path, context.GetEndpoint()?.DisplayName ?? "<null>");
     }
 
     await next();
@@ -142,7 +149,7 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Database schema creation skipped: {ex.Message}");
+        app.Logger.LogWarning(ex, "Database schema creation skipped");
     }
 
     // Predictable, publicly-documented test credentials must never be created outside
@@ -190,7 +197,7 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Database seeding skipped: {ex.Message}");
+            app.Logger.LogWarning(ex, "Database seeding skipped");
         }
     }
 }

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { authenticateUser, clearStoredAuth, getStoredAuthUser } from "../services/authService";
+import { authenticateUser, logoutUser, getStoredAuthUser } from "../services/authService";
 
 const AuthContext = createContext(null);
 
@@ -15,8 +15,8 @@ export function AuthProvider({ children }) {
     return false;
   }, []);
 
-  const logout = useCallback(() => {
-    clearStoredAuth();
+  const logout = useCallback(async () => {
+    await logoutUser();
     setUser(null);
   }, []);
 

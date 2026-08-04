@@ -16,11 +16,13 @@ public class SamplesController : ControllerBase
 {
     private readonly GbcLimsDbContext _context;
     private readonly AuditLogService _auditLogService;
+    private readonly ILogger<SamplesController> _logger;
 
-    public SamplesController(GbcLimsDbContext context, AuditLogService auditLogService)
+    public SamplesController(GbcLimsDbContext context, AuditLogService auditLogService, ILogger<SamplesController> logger)
     {
         _context = context;
         _auditLogService = auditLogService;
+        _logger = logger;
     }
 
     // The frontend treats the human-readable SampleNumber (e.g. "GBC-2025-100001") as the
@@ -42,8 +44,6 @@ public class SamplesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<SampleDto>>> Get([FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? priority, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
     {
-        Console.WriteLine($"Samples GET hit. User={User.Identity?.Name}, auth={User.Identity?.IsAuthenticated}");
-
         try
         {
             var query = _context.Samples.Include(s => s.CreatedBy).Where(s => !s.IsDeleted).AsQueryable();
@@ -67,8 +67,11 @@ public class SamplesController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Samples query failed: {ex.Message}");
-            return Ok(new { items = Array.Empty<SampleDto>(), total = 0, page, pageSize });
+            // A failed query is a real error, not "no samples exist" — returning it as
+            // an honest 500 instead of a fake-empty 200 means a database outage shows up
+            // as an error in the UI rather than silently looking like an empty system.
+            _logger.LogError(ex, "Samples query failed");
+            return StatusCode(500, new { message = "Unable to load samples at the moment." });
         }
     }
 
@@ -90,8 +93,10 @@ public class SamplesController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Sample lookup failed: {ex.Message}");
-            return NotFound();
+            // Same reasoning as Get(): a real failure shouldn't look identical to "this
+            // sample doesn't exist".
+            _logger.LogError(ex, "Sample lookup failed for id {SampleId}", id);
+            return StatusCode(500, new { message = "Unable to look up this sample at the moment." });
         }
     }
 
@@ -129,7 +134,7 @@ public class SamplesController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Sample create failed: {ex.Message}");
+            _logger.LogError(ex, "Sample create failed");
             return StatusCode(500, new { message = "Unable to create sample at the moment." });
         }
     }
@@ -177,7 +182,7 @@ public class SamplesController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Sample status update failed: {ex.Message}");
+            _logger.LogError(ex, "Sample status update failed for id {SampleId}", id);
             return StatusCode(500, new { message = "Unable to update sample status at the moment." });
         }
     }
@@ -215,7 +220,7 @@ public class SamplesController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Sample delete failed: {ex.Message}");
+            _logger.LogError(ex, "Sample delete failed for id {SampleId}", id);
             return StatusCode(500, new { message = "Unable to delete sample at the moment." });
         }
     }

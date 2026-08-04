@@ -91,6 +91,19 @@ export function clearStoredAuth() {
   localStorage.removeItem("gbc_refresh_token");
 }
 
+export async function logoutUser() {
+  try {
+    // Revokes the refresh token server-side so a stolen one can't keep minting new
+    // access tokens after the user logs out. Best-effort: local state gets cleared
+    // either way, so a network failure never leaves the user stuck "logged in".
+    await request("/api/auth/logout", { method: "POST" });
+  } catch (error) {
+    console.error("Logout request failed", error);
+  } finally {
+    clearStoredAuth();
+  }
+}
+
 export function getStoredAuthUser() {
   const storedUser = localStorage.getItem("gbc_user");
   return storedUser ? JSON.parse(storedUser) : null;

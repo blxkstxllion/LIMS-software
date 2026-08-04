@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using GbcLims.Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -70,6 +71,28 @@ public class AuthController : ControllerBase
         await _userManager.UpdateAsync(user);
 
         return Ok(new AuthResponse { AccessToken = token, RefreshToken = refreshToken, ExpiresIn = 3600, User = new UserDto { Id = user.Id, StaffId = user.StaffId, FullName = user.FullName, Email = user.Email!, Role = user.Role } });
+    }
+
+    // Revokes the refresh token server-side so it can no longer be exchanged for a new
+    // access token. The still-unexpired access token used to call this endpoint remains
+    // valid for the rest of its (short, 1-hour) lifetime — that's an inherent limit of
+    // stateless JWTs without a full revocation-list; the refresh token is the part that
+    // actually matters, since it's what would otherwise let a stolen token keep working
+    // for up to 7 days after the user thought they'd logged out.
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout()
+    {
+        var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is not null)
+        {
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+            await _userManager.UpdateAsync(user);
+        }
+
+        return NoContent();
     }
 
     private async Task<string> GenerateJwtToken(ApplicationUser user)
