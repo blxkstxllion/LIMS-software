@@ -204,4 +204,10 @@ code {
     flex: 0 0 auto !important;
     padding: 28px 20px !important;
   }
+  /* The team photo + long tagline push the branding panel past a phone's full screen
+     height, hiding the actual sign-in form below the fold with no hint it's there.
+     Dropped on small screens so the form is visible without scrolling first. */
+  .lims-login-hero-extra {
+    display: none !important;
+  }
 }

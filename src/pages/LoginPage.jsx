@@ -39,8 +39,8 @@ export default function LoginPage() {
           <div style={{ fontSize: 32, fontWeight: 800, lineHeight: 1.2, marginBottom: 8 }}>GBC LIMS</div>
           <div style={{ fontSize: 14, color: "#bfdbfe", marginBottom: 4 }}>IOP Group</div>
           <div style={{ fontSize: 12, color: "#93c5fd", fontStyle: "italic", marginBottom: 40 }}>ASSAY!! QUALITY OUR CORNERSTONE</div>
-          <div style={{ fontSize: 14, color: "#dbeafe", lineHeight: 1.7, marginBottom: 20, maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>Driving innovation, safety, and excellence in bauxite operations</div>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
+          <div className="lims-login-hero-extra" style={{ fontSize: 14, color: "#dbeafe", lineHeight: 1.7, marginBottom: 20, maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>Driving innovation, safety, and excellence in bauxite operations</div>
+          <div className="lims-login-hero-extra" style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
             <div style={{ width: 570, maxWidth: "100%", borderRadius: 24, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)", padding: 29, display: "flex", flexDirection: "column", alignItems: "center", gap: 21, boxSizing: "border-box" }}>
               <img src="/team.png" alt="GBC Laboratory Team" style={{ width: "100%", borderRadius: 19, display: "block" }} />
               <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: 2, color: "#dbeafe", textAlign: "center", textTransform: "uppercase" }}>Quality, Our Cornerstone</div>
