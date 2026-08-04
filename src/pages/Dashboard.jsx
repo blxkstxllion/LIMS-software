@@ -65,7 +65,7 @@ export default function Dashboard({ user, samples, results, coas, onNavigate }) 
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 28 }}>
+      <div className="lims-grid-2fr1fr" style={{ gap: 20, marginBottom: 28 }}>
         <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #e5e7eb", padding: 24 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 16 }}>Samples Processed — Last 7 Days</div>
           <ResponsiveContainer width="100%" height={220}>

@@ -9,6 +9,7 @@ const iconMap = { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, Fil
 
 export default function DashboardLayout({ user, onLogout, children, activePage, onNavigate }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -18,17 +19,22 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
   }, []);
 
   const canAccess = (menuItem) => menuItem.roles.includes("all") || menuItem.roles.includes(user?.role);
+  // On the mobile drawer the sidebar is always full-width (see .lims-sidebar's
+  // width:260px!important below 860px), so labels should show there even if the
+  // desktop collapse-to-icons toggle happens to be off.
+  const showLabels = sidebarOpen || mobileMenuOpen;
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "'Segoe UI',system-ui,sans-serif" }}>
       <div style={{ display: "flex", minHeight: "100vh" }}>
-        <div style={{ width: sidebarOpen ? 260 : 72, background: "linear-gradient(180deg,#0f2460 0%,#111827 100%)", color: "#fff", padding: "20px 14px", transition: "width 0.2s ease", boxShadow: "8px 0 30px rgba(15,23,42,0.15)" }}>
+        <div className={`lims-sidebar-backdrop ${mobileMenuOpen ? "lims-sidebar-open" : ""}`} onClick={() => setMobileMenuOpen(false)} />
+        <div className={`lims-sidebar ${mobileMenuOpen ? "lims-sidebar-open" : ""}`} style={{ width: sidebarOpen ? 260 : 72, background: "linear-gradient(180deg,#0f2460 0%,#111827 100%)", color: "#fff", padding: "20px 14px", transition: "width 0.2s ease", boxShadow: "8px 0 30px rgba(15,23,42,0.15)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Beaker size={20} />
               </div>
-              {sidebarOpen && <div><div style={{ fontSize: 14, fontWeight: 700 }}>GBC LIMS</div><div style={{ fontSize: 11, color: "#93c5fd" }}>Laboratory Management</div></div>}
+              {showLabels && <div><div style={{ fontSize: 14, fontWeight: 700 }}>GBC LIMS</div><div style={{ fontSize: 11, color: "#93c5fd" }}>Laboratory Management</div></div>}
             </div>
             <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 8, width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff" }}>
               <Menu size={18} />
@@ -40,18 +46,24 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
               const Icon = iconMap[item.icon] || LayoutDashboard;
               const active = activePage === item.key;
               return (
-                <div key={item.key} onClick={() => onNavigate(item.key)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, cursor: "pointer", background: active ? "rgba(255,255,255,0.16)" : "transparent", color: active ? "#fff" : "#cbd5e1", fontWeight: active ? 700 : 600 }}>
+                <div key={item.key} onClick={() => { onNavigate(item.key); setMobileMenuOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, cursor: "pointer", background: active ? "rgba(255,255,255,0.16)" : "transparent", color: active ? "#fff" : "#cbd5e1", fontWeight: active ? 700 : 600 }}>
                   <Icon size={18} />
-                  {sidebarOpen && <span>{item.label}</span>}
+                  {showLabels && <span>{item.label}</span>}
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{sidebarOpen ? "Laboratory Information Management System" : "GBC LIMS"}</div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+              <button className="lims-mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", alignItems: "center", justifyContent: "center", color: "#111827", flexShrink: 0 }}>
+                <Menu size={18} />
+              </button>
+              <div className="lims-header-full-title" style={{ fontSize: 18, fontWeight: 700, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sidebarOpen ? "Laboratory Information Management System" : "GBC LIMS"}</div>
+              <div className="lims-header-mobile-title" style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>GBC LIMS</div>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ position: "relative" }}>
                 <button onClick={() => setNotifOpen(!notifOpen)} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#111827", position: "relative" }}>
@@ -59,7 +71,7 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
                   {notifications.length > 0 && <span style={{ position: "absolute", top: -3, right: -3, background: "#991b1b", color: "#fff", borderRadius: "9999px", fontSize: 10, fontWeight: 700, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{notifications.length}</span>}
                 </button>
                 {notifOpen && (
-                  <div style={{ position: "absolute", right: 0, top: "110%", background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "8px 0", minWidth: 320, maxWidth: 380, maxHeight: 400, overflowY: "auto", boxShadow: "0 4px 20px #0001", zIndex: 100 }}>
+                  <div style={{ position: "absolute", right: 0, top: "110%", background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "8px 0", width: "min(320px, calc(100vw - 32px))", maxHeight: 400, overflowY: "auto", boxShadow: "0 4px 20px #0001", zIndex: 100 }}>
                     <div style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, color: "#111827", borderBottom: "1px solid #f3f4f6" }}>Notifications</div>
                     {notifications.length === 0 ? (
                       <div style={{ padding: "20px 16px", fontSize: 13, color: "#9ca3af", textAlign: "center" }}>Nothing new.</div>
@@ -77,7 +89,7 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
                   <div style={{ width: 34, height: 34, borderRadius: "50%", background: ROLE_COLORS[user.role] || "#1e3a8a", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13 }}>
                     {user.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
                   </div>
-                  <div>
+                  <div className="lims-header-user-text">
                     <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{user.name}</div>
                     <div style={{ fontSize: 11, color: "#6b7280" }}>{ROLE_LABELS[user.role]}</div>
                   </div>

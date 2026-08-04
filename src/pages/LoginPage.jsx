@@ -31,8 +31,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'Segoe UI',system-ui,sans-serif" }}>
-      <div style={{ flex: "0 0 42%", background: "linear-gradient(135deg,#0f2460 0%,#1e3a8a 40%,#1e40af 70%,#1e1b4b 100%)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 48 }}>
+    <div className="lims-login-shell" style={{ minHeight: "100vh", fontFamily: "'Segoe UI',system-ui,sans-serif" }}>
+      <div className="lims-login-branding" style={{ flex: "0 0 42%", background: "linear-gradient(135deg,#0f2460 0%,#1e3a8a 40%,#1e40af 70%,#1e1b4b 100%)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 48 }}>
         <div style={{ position: "relative", zIndex: 1, textAlign: "center", color: "#fff" }}>
           <div style={{ fontSize: 56, marginBottom: 8, display: "flex", justifyContent: "center" }}><Beaker size={56} /></div>
           <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 3, color: "#93c5fd", textTransform: "uppercase", marginBottom: 8 }}>Ghana Bauxite Company</div>

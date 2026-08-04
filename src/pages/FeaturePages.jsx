@@ -71,11 +71,11 @@ export function SampleRegistration({ user, onSampleAdded, showToast }) {
         <div style={{ fontSize:12, color:"#bfdbfe", marginTop:4 }}>Auto-generated based on origin and sample details</div>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:28 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
+        <div className="lims-grid-2" style={{ gap:"0 24px" }}>
           <Select label="Origin" value={form.origin} onChange={(v)=>set("origin",v)} options={Object.keys(sourceOptions)} required />
           {form.origin && <Select label="Sample Source" value={form.sampleSource} onChange={(v)=>set("sampleSource",v)} options={sourceOptions[form.origin]||[]} required />}
           <Input label="Location / Coordinates" value={form.location} onChange={(v)=>set("location",v)} placeholder="e.g. Block A-12" required />
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+          <div className="lims-grid-3" style={{ gap:12 }}>
             <Input label="Quantity" value={form.quantity} onChange={(v)=>set("quantity",v)} type="number" required />
             <Select label="Unit" value={form.unit} onChange={(v)=>set("unit",v)} options={["kg","g","tons","pieces"]} />
             <Input label="Tonnage (t)" value={form.tonnage} onChange={(v)=>set("tonnage",v)} type="number" placeholder="e.g. 12.50" required />
@@ -281,7 +281,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
       </div>
       {selected && !editMode && (
         <Modal title={`Sample: ${selected.id}`} onClose={()=>setSelected(null)}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <div className="lims-grid-2" style={{ gap:12 }}>
             {[['Sample ID',selected.id],['Origin',selected.origin],['Sample Source',selected.sampleSource],['Location',selected.location],['Quantity',`${selected.quantity} ${selected.unit}`],['Priority',''],['Status',''],['Submitted By',selected.submittedBy],['Received By',selected.receivedBy],['Date Received',formatDate(selected.dateReceived)],['Batch Number',selected.batchNumber||'—'],['Assigned To',selected.assignedTo||'Unassigned']].map(([k,v])=>(
               <div key={k} style={{ padding:"10px 14px", background:"#f9fafb", borderRadius:8 }}>
                 <div style={{ fontSize:11, color:"#9ca3af", fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:3 }}>{k}</div>
@@ -316,7 +316,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
       )}
       {editMode && editData && (
         <Modal title={`Edit Sample: ${editData.id}`} onClose={()=>setEditMode(false)}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 20px" }}>
+          <div className="lims-grid-2" style={{ gap:"0 20px" }}>
             <Input label="Location" value={editData.location} onChange={(v)=>setEditData((p)=>({...p,location:v}))} />
             <Input label="Quantity" value={editData.quantity} onChange={(v)=>setEditData((p)=>({...p,quantity:v}))} type="number" />
             <Select label="Priority" value={editData.priority} onChange={(v)=>setEditData((p)=>({...p,priority:v}))} options={["Low","Medium","High","Urgent"]} />
@@ -361,7 +361,7 @@ export function SampleVerification({ user, samples, setSamples, showToast, onSam
   };
 
   return (
-    <div style={{ padding:28, display:"grid", gridTemplateColumns:"1fr 1fr", gap:24, alignItems:"start" }}>
+    <div className="lims-grid-2" style={{ padding:28, gap:24, alignItems:"start" }}>
       <div>
         <h1 style={{ fontSize:22, fontWeight:800, color:"#111827", margin:"0 0 8px" }}>Sample Verification</h1>
         <p style={{ color:"#6b7280", fontSize:14, margin:"0 0 20px" }}>{pending.length} samples pending verification</p>
@@ -517,6 +517,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         {canCreate && <Button onClick={()=>setViewList(false)} variant="primary">+ New Result</Button>}
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
+        <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
           <thead><tr style={{ background:"#f9fafb" }}>{["Result ID","Sample ID","Date","Moisture","Method","Al₂O₃%","SiO₂%","ASR","Status","Actions"].map((h)=>(<th key={h} style={{ padding:"11px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb", whiteSpace:"nowrap" }}>{h}</th>))}</tr></thead>
           <tbody>
@@ -545,11 +546,12 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       {approveModal && (
         <Modal title={`Approve Result: ${approveModal.id}`} onClose={()=>setApproveModal(null)}>
           <div style={{ background:"#f9fafb", borderRadius:8, padding:14, marginBottom:16 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:13 }}>
+            <div className="lims-grid-2" style={{ gap:8, fontSize:13 }}>
               {[['Sample',approveModal.sampleId],['Method',approveModal.method],['Al₂O₃',`${approveModal.al2o3}%`],['SiO₂',`${approveModal.sio2}%`],['Fe₂O₃',`${approveModal.fe2o3}%`],['Total',`${approveModal.totalOxides}%`]].map(([k,v])=>(<div key={k}><span style={{ color:"#9ca3af", fontSize:11 }}>{k}: </span><strong>{v}</strong></div>))}
             </div>
           </div>
@@ -574,7 +576,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         <Button onClick={()=>setViewList(true)} variant="ghost">📋 View All Results</Button>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:28 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
+        <div className="lims-grid-2" style={{ gap:"0 24px" }}>
           <Select label="Sample" value={form.sampleId} onChange={(v)=>set("sampleId",v)} options={availableSamples.map((s)=>({value:s.id,label:`${s.id} — ${s.origin}`}))} required />
           <Input label="Analysis Date" value={form.analysisDate} onChange={(v)=>set("analysisDate",v)} type="date" required />
           <Input label="Analyst Name" value={form.analystName} onChange={(v)=>set("analystName",v)} required />
@@ -593,13 +595,13 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         {form.method === "Spectroscopy" && <Input label="Equipment" value={form.equipment} onChange={(v)=>set("equipment",v)} placeholder="e.g. Bruker S8 Tiger XRF" />}
         <div style={{ background:"#f9fafb", borderRadius:10, padding:20, marginBottom:20 }}>
           <div style={{ fontSize:14, fontWeight:700, color:"#374151", marginBottom:14 }}>🔬 Major Oxides (%) — Required</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"0 20px" }}>
+          <div className="lims-grid-3" style={{ gap:"0 20px" }}>
             {[['al2o3','Al₂O₃ (Alumina)'],['sio2','SiO₂ (Silica)'],['fe2o3','Fe₂O₃ (Iron Oxide)'],['tio2','TiO₂ (Titanium Dioxide)'],['loi','LOI (Loss on Ignition)']].map(([k,l])=>(<Input key={k} label={l} value={form[k]} onChange={(v)=>set(k,v)} type="number" placeholder="0.00" required />))}
           </div>
         </div>
         <div style={{ background:"#f0f9ff", borderRadius:10, padding:20, marginBottom:20 }}>
           <div style={{ fontSize:14, fontWeight:700, color:"#374151", marginBottom:14 }}>Minor Oxides (%) — Optional</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"0 16px" }}>
+          <div className="lims-grid-4" style={{ gap:"0 16px" }}>
             {form.method === "Spectroscopy"
               ? [['cao','CaO'],['mgo','MgO'],['na2o','Na₂O'],['k2o','K₂O'],['p2o5','P₂O₅'],['mno','MnO'],['cr2o3','Cr₂O₃']].map(([k,l])=>(<Input key={k} label={l} value={form[k]} onChange={(v)=>set(k,v)} type="number" placeholder="0.000" />))
               : <div style={{ gridColumn:"1/-1" }}><Input label="Minor Oxides (aggregate)" value={form.minorOxides} onChange={(v)=>set("minorOxides",v)} type="number" placeholder="0.00" note="Aggregate of trace elements" /></div>}
@@ -607,7 +609,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         </div>
         <div style={{ background:"linear-gradient(135deg,#1e3a8a,#1e40af)", borderRadius:10, padding:20, marginBottom:20, color:"#fff" }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#93c5fd", marginBottom:12, letterSpacing:1 }}>AUTOMATIC CALCULATIONS</div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
+          <div className="lims-grid-4" style={{ gap:12 }}>
             {[['Total Oxides',`${totalOxides.toFixed(2)}%`,totalWarning],['Al₂O₃/SiO₂ (ASR)',asr,false],['Reactivity Ratio',rr,false],['Al₂O₃ Grade',highAlumina?'High Grade':'Standard',false]].map(([l,v,warn])=>(
               <div key={l} style={{ background:"#ffffff15", borderRadius:8, padding:12, textAlign:"center" }}>
                 <div style={{ fontSize:11, color:"#93c5fd", marginBottom:4 }}>{l}</div>
@@ -620,7 +622,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         </div>
         <div style={{ background:"#f9fafb", borderRadius:10, padding:16, marginBottom:20 }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#374151", marginBottom:12 }}>Quality Control</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"0 20px" }}>
+          <div className="lims-grid-3" style={{ gap:"0 20px" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
               <input type="checkbox" id="cal" checked={form.calibrated} onChange={(e)=>set("calibrated",e.target.checked)} style={{ accentColor:"#1e3a8a", width:16, height:16 }} />
               <label htmlFor="cal" style={{ fontSize:13, fontWeight:600, cursor:"pointer" }}>Equipment Calibrated</label>
@@ -686,7 +688,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         <div style={{ fontSize:20, fontWeight:700, marginTop:12, letterSpacing:3, color:"#111827" }}>CERTIFICATE OF ANALYSIS</div>
         <div style={{ fontSize:12, color:"#374151" }}>COA No: <strong>{coa.id}</strong> &nbsp;|&nbsp; Issue Date: <strong>{formatDate(coa.issueDate)}</strong></div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+      <div className="lims-grid-2" style={{ gap:16, marginBottom:20 }}>
         <div style={{ border:"1px solid #d1d5db", borderRadius:6, padding:12 }}>
           <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>CLIENT INFORMATION</div>
           <div><strong>Client:</strong> {coa.clientName}</div>
@@ -704,13 +706,15 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
       {coa.includeResults && coa.result && (
         <div style={{ marginBottom:20 }}>
           <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>ANALYTICAL RESULTS</div>
+          <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
             <thead><tr style={{ background:"#1e3a8a", color:"#fff" }}><th style={{ padding:"7px 10px", textAlign:"left" }}>Parameter</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Result (%)</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Method</th></tr></thead>
             <tbody>
               {[['Aluminium Oxide (Al₂O₃)',coa.result.al2o3],['Silicon Dioxide (SiO₂)',coa.result.sio2],['Iron Oxide (Fe₂O₃)',coa.result.fe2o3],['Titanium Dioxide (TiO₂)',coa.result.tio2],['Loss on Ignition (LOI)',coa.result.loi]].map(([p,v],i)=>(<tr key={p} style={{ background: i%2===0?"#f9fafb":"#fff" }}><td style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb" }}>{p}</td><td style={{ padding:"6px 10px", textAlign:"center", fontWeight:600, borderBottom:"1px solid #e5e7eb" }}>{v}</td><td style={{ padding:"6px 10px", textAlign:"center", color:"#6b7280", borderBottom:"1px solid #e5e7eb" }}>{coa.result.method}</td></tr>))}
             </tbody>
           </table>
-          <div style={{ background:"#f0f7ff", borderRadius:6, padding:10, marginTop:10, display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, fontSize:11 }}>
+          </div>
+          <div className="lims-grid-3" style={{ background:"#f0f7ff", borderRadius:6, padding:10, marginTop:10, gap:8, fontSize:11 }}>
             <div><strong>Total Oxides:</strong> {coa.result.totalOxides}%</div>
             <div><strong>Al₂O₃/SiO₂ Ratio:</strong> {coa.result.asr}</div>
             <div><strong>Reactivity Ratio:</strong> {coa.result.rr}</div>
@@ -727,7 +731,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         <div style={{ fontWeight:700, color:"#374151", marginBottom:4 }}>CERTIFICATION STATEMENT</div>
         <div>This is to certify that the above results were obtained through analysis of the sample as received. The results relate only to the sample analyzed. This certificate shall not be reproduced except in full without the written approval of the laboratory.</div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+      <div className="lims-grid-2" style={{ gap:20 }}>
         <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Analyzed By:</strong> {coa.result?.analystName||user.name}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.result?.analysisDate)}</div></div>
         <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Approved By:</strong> {coa.generatedBy}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.generatedDate)}</div></div>
       </div>
@@ -781,6 +785,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         <Button onClick={()=>setViewList(false)} variant="primary">+ Create New COA</Button>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
+        <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
           <thead><tr style={{ background:"#f9fafb" }}>{["COA Number","Sample ID","Client","Generated By","Date","Issue Date","Status","Actions"].map((h)=>(<th key={h} style={{ padding:"11px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb" }}>{h}</th>))}</tr></thead>
           <tbody>
@@ -798,6 +803,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -813,7 +819,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:28 }}>
         <Select label="Sample" value={form.sampleId} onChange={(v)=>set("sampleId",v)} options={approvedResults.map((r)=>({value:r.sampleId,label:`${r.sampleId} (Result: ${r.id})`}))} required />
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 20px" }}>
+        <div className="lims-grid-2" style={{ gap:"0 20px" }}>
           <Input label="Client Name" value={form.clientName} onChange={(v)=>set("clientName",v)} required />
           <Input label="Client Contact" value={form.clientContact} onChange={(v)=>set("clientContact",v)} placeholder="Email or phone" />
         </div>
@@ -870,13 +876,13 @@ export function QCManagement({ user, samples, showToast }) {
         </div>
         {user.role !== "management" && <Button onClick={()=>setShowForm(true)} variant="primary">+ Add QC Sample</Button>}
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:24 }}>
+      <div className="lims-grid-4" style={{ gap:16, marginBottom:24 }}>
         <StatCard label="Pass Rate" value={`${passRate}%`} icon="✅" color="#dcfce7" />
         <StatCard label="Total QC Samples" value={qcSamples.length} icon="🎯" color="#dbeafe" />
         <StatCard label="Failed QC" value={qcSamples.filter((q)=>q.status === "Fail").length} icon="❌" color="#fee2e2" />
         <StatCard label="Pending Review" value="0" icon="⏳" color="#fef3c7" />
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:24 }}>
+      <div className="lims-grid-2" style={{ gap:20, marginBottom:24 }}>
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}>
           <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:16 }}>QC Pass Rate Trend</div>
           <ResponsiveContainer width="100%" height={200}>
@@ -894,7 +900,7 @@ export function QCManagement({ user, samples, showToast }) {
         <Modal title="Add QC Sample" onClose={()=>setShowForm(false)}>
           <Select label="QC Type" value={form.type} onChange={(v)=>setForm((p)=>({...p,type:v}))} options={["Standard","Blank","Duplicate","Spike"]} />
           <Input label="Reference Sample ID" value={form.refId} onChange={(v)=>setForm((p)=>({...p,refId:v}))} placeholder="For duplicate/spike samples" />
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+          <div className="lims-grid-2" style={{ gap:16 }}>
             <Input label="Expected Al₂O₃ (%)" value={form.expectedAl2o3} onChange={(v)=>setForm((p)=>({...p,expectedAl2o3:v}))} type="number" />
             <Input label="Actual Al₂O₃ (%)" value={form.actualAl2o3} onChange={(v)=>setForm((p)=>({...p,actualAl2o3:v}))} type="number" />
           </div>
@@ -911,6 +917,7 @@ export function QCManagement({ user, samples, showToast }) {
       )}
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
         <div style={{ padding:"16px 20px", borderBottom:"1.5px solid #e5e7eb", fontWeight:700, color:"#111827", fontSize:15 }}>QC Sample Records</div>
+        <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
           <thead><tr style={{ background:"#f9fafb" }}>{["QC ID","Type","Reference ID","Expected Al₂O₃","Actual Al₂O₃","Variance (%)","Status","Date","Created By"].map((h)=>(<th key={h} style={{ padding:"10px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb", whiteSpace:"nowrap" }}>{h}</th>))}</tr></thead>
           <tbody>
@@ -929,6 +936,7 @@ export function QCManagement({ user, samples, showToast }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -1014,13 +1022,14 @@ export function FileManagement({ user, samples, showToast }) {
           <Button onClick={()=>fileInputRef.current?.click()} variant="primary" disabled={uploading}>📤 Upload Files</Button>
         </div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, marginBottom:24 }}>
+      <div className="lims-grid-5" style={{ gap:12, marginBottom:24 }}>
         {[['PDF','📄','#fee2e2'],['Excel','📊','#dcfce7'],['Image','🖼️','#dbeafe'],['CSV','📋','#fef3c7'],['Other','📁','#f3f4f6']].map(([type,icon,bg])=>(<div key={type} style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:"14px 16px", textAlign:"center" }}><div style={{ fontSize:24, marginBottom:4 }}>{icon}</div><div style={{ fontSize:18, fontWeight:700, color:"#111827" }}>{files.filter((f)=>f.type===type).length}</div><div style={{ fontSize:12, color:"#6b7280" }}>{type} files</div></div>))}
       </div>
       <div style={{ marginBottom:16 }}>
         <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search files…" style={{ width:"100%", maxWidth:400, padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
+        <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
           <thead><tr style={{ background:"#f9fafb" }}>{["File","Type","Size","Group","Sample","Uploaded By","Date","Actions"].map((h)=>(<th key={h} style={{ padding:"10px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb" }}>{h}</th>))}</tr></thead>
           <tbody>
@@ -1038,6 +1047,7 @@ export function FileManagement({ user, samples, showToast }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -1172,13 +1182,13 @@ export function Reports({ samples, results, coas }) {
           <div style={{ background:"#fff", borderRadius:14, padding:16, border:"1px solid #dbeafe" }}><div style={{ fontSize:12, color:"#1e40af", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>COAs</div><div style={{ marginTop:8, fontSize:22, fontWeight:800, color:"#0f172a" }}>{filteredCoas.filter((c) => c.status === "Issued" || c.status === "Approved").length}</div></div>
         </div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+      <div className="lims-grid-2" style={{ gap:16, marginBottom:24 }}>
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:18 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:12 }}>Al₂O₃ Trend</div><ResponsiveContainer width="100%" height={160}><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="date" fontSize={11} /><YAxis fontSize={11} /><Tooltip /><Line type="monotone" dataKey="al2o3" stroke="#22c55e" dot={false} /></LineChart></ResponsiveContainer></div>
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:18 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:12 }}>SiO₂ Trend</div><ResponsiveContainer width="100%" height={160}><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="date" fontSize={11} /><YAxis fontSize={11} /><Tooltip /><Line type="monotone" dataKey="sio2" stroke="#3b82f6" dot={false} /></LineChart></ResponsiveContainer></div>
       </div>
       <div style={{ display:"flex", gap:12, marginBottom:24, flexWrap:"wrap" }}>{reports.map((r)=>(<div key={r.key} onClick={()=>setActiveReport(r.key)} style={{ padding:"12px 18px", borderRadius:10, border:`2px solid ${activeReport===r.key?"#1e3a8a":"#e5e7eb"}`, background: activeReport===r.key?"#eff6ff":"#fff", cursor:"pointer", minWidth:160 }}><div style={{ fontSize:14, fontWeight: activeReport===r.key?700:600, color: activeReport===r.key?"#1e3a8a":"#374151" }}>{r.label}</div><div style={{ fontSize:11, color:"#9ca3af", marginTop:2 }}>{r.desc}</div></div>))}</div>
       {activeReport === "activity" && (
-        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:20 }}>
+        <div className="lims-grid-2fr1fr" style={{ gap:20 }}>
           <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Sample Registration vs Completion — Last 7 Days</div><ResponsiveContainer width="100%" height={280}><BarChart data={activityData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="date" fontSize={12} /><YAxis fontSize={12} /><Tooltip /><Legend /><Bar dataKey="registered" fill="#3b82f6" name="Registered" /><Bar dataKey="completed" fill="#22c55e" name="Completed" /></BarChart></ResponsiveContainer></div>
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}><StatCard label="Total Samples" value={samples.length} icon="🧪" color="#dbeafe" /><StatCard label="Completion Rate" value={`${(samples.filter((s)=>s.status === "Completed" || s.status === "Approved").length / samples.length * 100).toFixed(0)}%`} icon="📈" color="#dcfce7" /><StatCard label="COAs Issued" value={coas.filter((c)=>c.status === "Issued" || c.status === "Approved").length} icon="📄" color="#fef3c7" /></div>
         </div>
@@ -1190,7 +1200,7 @@ export function Reports({ samples, results, coas }) {
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Grade Statistics</div>{(() => { const al = gradeData.map((g)=>g.al2o3).filter(Boolean); const mean = al.reduce((a,b)=>a+b,0)/al.length; const std = Math.sqrt(al.reduce((s,v)=>s+(v-mean)**2,0)/al.length); return [['Samples Analyzed', gradeData.length],['Mean Al₂O₃', `${mean.toFixed(2)}%`],['Min Al₂O₃', `${Math.min(...al).toFixed(2)}%`],['Max Al₂O₃', `${Math.max(...al).toFixed(2)}%`],['Std Deviation', `${std.toFixed(2)}%`],['High Grade (>46%)', gradeData.filter((g)=>g.al2o3>46).length]].map(([k,v])=>(<div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #f3f4f6", fontSize:13 }}><span style={{ color:"#6b7280" }}>{k}</span><strong style={{ color:"#111827" }}>{v}</strong></div>)); })()}</div>
       )}
       {activeReport === "quality" && (
-        <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Quality Metrics</div><div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:20 }}><StatCard label="Overall QC Pass Rate" value={`${qcPassRate}%`} icon="✅" color="#dcfce7" /><StatCard label="Failed QC Samples" value={qcFailedCount} icon="❌" color="#fee2e2" /><StatCard label="Total QC Samples" value={qcSamples.length} icon="🎯" color="#dbeafe" /><StatCard label="Calibration Compliance" value={`${calibrationCompliance}%`} icon="⚖️" color="#f3e8ff" /></div>{qcTrendData.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={qcTrendData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="m" fontSize={12} /><YAxis domain={[0,100]} fontSize={12} unit="%" /><Tooltip /><Line type="monotone" dataKey="rate" stroke="#22c55e" strokeWidth={2} dot={{r:4}} name="QC Pass Rate %" /></LineChart></ResponsiveContainer> : <div style={{ padding:40, textAlign:"center", color:"#9ca3af", fontSize:13 }}>No QC history yet.</div>}</div>
+        <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Quality Metrics</div><div className="lims-grid-4" style={{ gap:16, marginBottom:20 }}><StatCard label="Overall QC Pass Rate" value={`${qcPassRate}%`} icon="✅" color="#dcfce7" /><StatCard label="Failed QC Samples" value={qcFailedCount} icon="❌" color="#fee2e2" /><StatCard label="Total QC Samples" value={qcSamples.length} icon="🎯" color="#dbeafe" /><StatCard label="Calibration Compliance" value={`${calibrationCompliance}%`} icon="⚖️" color="#f3e8ff" /></div>{qcTrendData.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={qcTrendData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="m" fontSize={12} /><YAxis domain={[0,100]} fontSize={12} unit="%" /><Tooltip /><Line type="monotone" dataKey="rate" stroke="#22c55e" strokeWidth={2} dot={{r:4}} name="QC Pass Rate %" /></LineChart></ResponsiveContainer> : <div style={{ padding:40, textAlign:"center", color:"#9ca3af", fontSize:13 }}>No QC history yet.</div>}</div>
       )}
     </div>
   );
@@ -1296,6 +1306,7 @@ export function AdminPanel({ user, showToast }) {
             <Button onClick={()=>setShowAddUser(true)} variant="primary">+ Add User</Button>
           </div>
           <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
+            <div style={{ overflowX:"auto" }}>
             <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
               <thead><tr style={{ background:"#f9fafb" }}>{["Staff ID","Name","Email","Role","Department","Status","Last Login","Actions"].map((h)=>(<th key={h} style={{ padding:"11px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb", whiteSpace:"nowrap" }}>{h}</th>))}</tr></thead>
               <tbody>
@@ -1313,11 +1324,12 @@ export function AdminPanel({ user, showToast }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
       {activeTab === "settings" && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+        <div className="lims-grid-2" style={{ gap:20 }}>
           {[{ title:"🏢 General Settings", fields:[['Company Name','Ghana Bauxite Company Limited'],['Lab Name','GBC Assay Laboratory'],['Contact Email','lab@ghanabauxite.com']] },{ title:"🧪 Sample Settings", fields:[['Sample ID Prefix','GBC'],['Default Priority','Medium'],['Batch Req.','Optional']] },{ title:"🔬 Analysis Settings", fields:[['Default Method','Spectroscopy'],['QC Frequency','Per batch'],['Oxide Tolerance','±2%']] },{ title:"🔒 Security Settings", fields:[['Session Timeout','60 minutes'],['Failed Login Limit','5 attempts'],['Password Complexity','Strong']] }].map(({title,fields})=>(<div key={title} style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:20 }}><div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:14 }}>{title}</div>{fields.map(([k,v])=>(<div key={k} style={{ marginBottom:14 }}><label style={{ display:"block", fontSize:12, fontWeight:600, color:"#6b7280", marginBottom:4 }}>{k}</label><input defaultValue={v} style={{ width:"100%", padding:"8px 10px", border:"1.5px solid #e5e7eb", borderRadius:6, fontSize:13, boxSizing:"border-box", outline:"none" }} /></div>))}<Button variant="success" small>💾 Save</Button></div>))}
         </div>
       )}
@@ -1325,7 +1337,7 @@ export function AdminPanel({ user, showToast }) {
         <div>
           <div style={{ marginBottom:16 }}><input value={auditSearch} onChange={(e)=>setAuditSearch(e.target.value)} placeholder="🔍 Search logs by user, action, module…" style={{ width:"100%", maxWidth:400, padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} /></div>
           <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
-            <div style={{ maxHeight:500, overflowY:"auto" }}>
+            <div style={{ maxHeight:500, overflowY:"auto", overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
                 <thead style={{ position:"sticky", top:0, background:"#f9fafb", zIndex:1 }}><tr>{["Timestamp","User","Action","Module","Record ID","IP Address"].map((h)=>(<th key={h} style={{ padding:"10px 12px", textAlign:"left", fontWeight:600, color:"#374151", borderBottom:"1.5px solid #e5e7eb", whiteSpace:"nowrap" }}>{h}</th>))}</tr></thead>
                 <tbody>{filteredLogs.slice(0,30).map((l,i)=>(<tr key={l.id} style={{ borderBottom:"1px solid #f3f4f6", background: i%2===0?"#fff":"#fafafa" }}><td style={{ padding:"8px 12px", fontFamily:"monospace", color:"#6b7280", fontSize:11 }}>{l.timestamp}</td><td style={{ padding:"8px 12px", fontWeight:600, color:"#1e3a8a", fontSize:11 }}>{l.user}</td><td style={{ padding:"8px 12px" }}><Badge text={l.action} color="#374151" bg="#f3f4f6" small /></td><td style={{ padding:"8px 12px", color:"#6b7280" }}>{l.module}</td><td style={{ padding:"8px 12px", fontFamily:"monospace", fontSize:11, color:"#6b7280" }}>{l.recordId}</td><td style={{ padding:"8px 12px", fontFamily:"monospace", color:"#9ca3af", fontSize:11 }}>{l.ipAddress}</td></tr>))}</tbody>
@@ -1335,7 +1347,7 @@ export function AdminPanel({ user, showToast }) {
         </div>
       )}
       {activeTab === "stats" && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16 }}>
+        <div className="lims-grid-3" style={{ gap:16 }}>
           <StatCard label="Total Users" value={users.length} icon="👥" color="#dbeafe" />
           <StatCard label="Active Users" value={users.filter((u)=>u.status !== "Suspended").length} icon="✅" color="#dcfce7" />
           <StatCard label="Roles Configured" value="5" icon="🔑" color="#f3e8ff" />
@@ -1346,7 +1358,7 @@ export function AdminPanel({ user, showToast }) {
       )}
       {showAddUser && (
         <Modal title="Add New User" onClose={()=>setShowAddUser(false)}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 20px" }}>
+          <div className="lims-grid-2" style={{ gap:"0 20px" }}>
             <Input label="Staff ID" value={newUser.staffId} onChange={(v)=>setNewUser((p)=>({...p,staffId:v}))} placeholder="GBC-DEPT-001" required note="Format: GBC-DEPT-###" />
             <Input label="Full Name" value={newUser.name} onChange={(v)=>setNewUser((p)=>({...p,name:v}))} required />
             <Input label="Email" value={newUser.email} onChange={(v)=>setNewUser((p)=>({...p,email:v}))} type="email" required />
@@ -1362,7 +1374,7 @@ export function AdminPanel({ user, showToast }) {
       )}
       {editUser && (
         <Modal title={`Edit User: ${editUser.staffId}`} onClose={()=>setEditUser(null)}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 20px" }}>
+          <div className="lims-grid-2" style={{ gap:"0 20px" }}>
             <Input label="Full Name" value={editUser.name} onChange={(v)=>setEditUser((p)=>({...p,name:v}))} />
             <Input label="Email" value={editUser.email} onChange={(v)=>setEditUser((p)=>({...p,email:v}))} type="email" />
             <Select label="Role" value={editUser.role} onChange={(v)=>setEditUser((p)=>({...p,role:v}))} options={Object.entries(ROLE_LABELS).map(([k,l])=>({value:k,label:l}))} />

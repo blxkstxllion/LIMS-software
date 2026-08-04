@@ -108,3 +108,100 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* --- GBC LIMS responsive layer ---
+   The app itself is built entirely with inline styles (no CSS-in-JS, no utility
+   framework), which can't express @media queries. These classes are the one place
+   that can, so multi-column grids and the sidebar drawer are done here instead —
+   applied alongside (not instead of) each element's inline style for spacing/color. */
+
+.lims-grid-2,
+.lims-grid-3,
+.lims-grid-4,
+.lims-grid-5,
+.lims-grid-2fr1fr {
+  display: grid;
+}
+.lims-grid-2 { grid-template-columns: 1fr 1fr; }
+.lims-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.lims-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.lims-grid-5 { grid-template-columns: repeat(5, 1fr); }
+.lims-grid-2fr1fr { grid-template-columns: 2fr 1fr; }
+
+@media (max-width: 768px) {
+  .lims-grid-2,
+  .lims-grid-3,
+  .lims-grid-4,
+  .lims-grid-5,
+  .lims-grid-2fr1fr {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Any table wrapped in this scrolls horizontally on its own instead of forcing the
+   whole page to scroll sideways, which is what happens to a wide data table dropped
+   onto a 375px-wide phone screen with no wrapper at all. */
+.lims-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.lims-mobile-menu-btn {
+  display: none;
+}
+
+.lims-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .lims-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 200;
+    width: 260px !important;
+    transform: translateX(-100%);
+  }
+  .lims-sidebar.lims-sidebar-open {
+    transform: translateX(0);
+  }
+  .lims-mobile-menu-btn {
+    display: flex !important;
+  }
+  .lims-sidebar-backdrop.lims-sidebar-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    z-index: 150;
+  }
+  .lims-header-full-title {
+    display: none;
+  }
+  .lims-header-mobile-title {
+    display: block !important;
+  }
+  .lims-header-user-text {
+    display: none;
+  }
+}
+
+.lims-header-mobile-title {
+  display: none;
+}
+
+.lims-login-shell {
+  display: flex;
+}
+
+@media (max-width: 860px) {
+  .lims-login-shell {
+    flex-direction: column;
+  }
+  .lims-login-branding {
+    flex: 0 0 auto !important;
+    padding: 28px 20px !important;
+  }
+}
