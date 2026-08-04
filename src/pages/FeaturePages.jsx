@@ -405,6 +405,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         standardDeviation: Number(form.stdDev || 0),
         repeatability: form.repeatability,
         notes: form.notes,
+        status,
       };
       const result = await onResultAdded(payload);
       setResults((prev) => [result, ...prev]);
@@ -423,6 +424,16 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
       setApproveModal(null); setApproveComment("");
     } catch (error) {
       showToast(error.message || "Unable to update result.", "error");
+    }
+  };
+
+  const handleSubmitDraft = async (r) => {
+    try {
+      const updated = await onResultStatusChanged(r.id, "Submitted");
+      setResults((prev) => prev.map((x) => x.id===r.id ? updated : x));
+      showToast(`Result ${r.id} submitted for approval.`, "success");
+    } catch (error) {
+      showToast(error.message || "Unable to submit result.", "error");
     }
   };
 
@@ -448,6 +459,9 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
                 <td style={{ padding:"10px 12px", fontWeight:600 }}>{r.asr}</td>
                 <td style={{ padding:"10px 12px" }}><Badge text={r.status} color={statusColor(r.status)} bg={statusBg(r.status)} small /></td>
                 <td style={{ padding:"10px 12px" }}>
+                  {r.status === "Draft" && r.createdBy === user.staffId && (
+                    <button onClick={()=>handleSubmitDraft(r)} style={{ padding:"3px 10px", background:"#dbeafe", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e40af", fontWeight:600 }}>Submit</button>
+                  )}
                   {PERMISSIONS[user.role].approve && r.status === "Submitted" && (
                     r.createdBy === user.staffId
                       ? <span style={{ fontSize:11, color:"#9ca3af" }}>Awaiting reviewer</span>
@@ -900,6 +914,13 @@ export function FileManagement({ user, showToast }) {
   );
 }
 
+// buildReportHtml() below writes raw HTML into a new window via document.write, not
+// through React, so nothing here gets React's automatic escaping — any interpolated
+// value must be escaped by hand or it's a stored-XSS hole waiting for a free-text field
+// to be added to the report.
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
 export function Reports({ samples, results, coas }) {
   const [activeReport, setActiveReport] = useState("activity");
   const [reportFrequency, setReportFrequency] = useState("daily");
@@ -956,14 +977,15 @@ export function Reports({ samples, results, coas }) {
     const weighted = {};
     constituents.forEach((k) => { const sum = rows.reduce((sumValue, row) => sumValue + ((parseFloat(row[k]) || 0) * (parseFloat(row.tonnage) || 0)), 0); weighted[k] = totalTonnage ? (sum / totalTonnage).toFixed(2) : "0.00"; });
     const logo = `<img src='/logo.png' style='position:absolute;right:36px;top:32px;opacity:0.08;width:140px;height:auto;'/>`;
-    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${reportTitle}</title><style>body{margin:0;padding:0;background:#eff6ff;font-family:'Segoe UI',system-ui,sans-serif;color:#0f172a;} .page{max-width:1120px;margin:0 auto;padding:28px;position:relative;} .header{padding:28px 32px;border-radius:18px 18px 0 0;background:#1e3a8a;color:#fff;position:relative;overflow:hidden;} .header h1{margin:0;font-size:32px;font-weight:800;letter-spacing:.02em;} .header p{margin:10px 0 0;font-size:15px;color:#e0e7ff;line-height:1.6;max-width:780px;} .meta{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;} .meta-card{background:#fff;color:#0f172a;border:1px solid #c7d2fe;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(15,23,42,.08);} .meta-card span{display:block;font-size:26px;font-weight:800;margin-bottom:6px;} .meta-card small{color:#475569;font-size:13px;} table{width:100%;border-collapse:collapse;margin-top:30px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 18px 46px rgba(15,23,42,.08);} th,td{padding:14px 16px;text-align:left;} th{background:#1e40af;color:#fff;font-weight:700;font-size:13px;letter-spacing:.01em;} td{color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0;} tr:nth-child(even){background:#eff6ff;} .section{margin-top:34px;} .section-title{font-size:18px;font-weight:700;color:#102a43;margin-bottom:16px;} .summary-text{font-size:14px;color:#334155;line-height:1.7;} .watermark{position:absolute;right:32px;top:32px;opacity:.08;width:160px;height:auto;}</style></head><body><div class="page">${logo}<div class="header"><h1>${reportTitle}</h1><p>${periodLabel} • Real-time figures updated from current sample and analysis data.</p></div>`;
+    const safeTitle = escapeHtml(reportTitle);
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title><style>body{margin:0;padding:0;background:#eff6ff;font-family:'Segoe UI',system-ui,sans-serif;color:#0f172a;} .page{max-width:1120px;margin:0 auto;padding:28px;position:relative;} .header{padding:28px 32px;border-radius:18px 18px 0 0;background:#1e3a8a;color:#fff;position:relative;overflow:hidden;} .header h1{margin:0;font-size:32px;font-weight:800;letter-spacing:.02em;} .header p{margin:10px 0 0;font-size:15px;color:#e0e7ff;line-height:1.6;max-width:780px;} .meta{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;} .meta-card{background:#fff;color:#0f172a;border:1px solid #c7d2fe;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(15,23,42,.08);} .meta-card span{display:block;font-size:26px;font-weight:800;margin-bottom:6px;} .meta-card small{color:#475569;font-size:13px;} table{width:100%;border-collapse:collapse;margin-top:30px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 18px 46px rgba(15,23,42,.08);} th,td{padding:14px 16px;text-align:left;} th{background:#1e40af;color:#fff;font-weight:700;font-size:13px;letter-spacing:.01em;} td{color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0;} tr:nth-child(even){background:#eff6ff;} .section{margin-top:34px;} .section-title{font-size:18px;font-weight:700;color:#102a43;margin-bottom:16px;} .summary-text{font-size:14px;color:#334155;line-height:1.7;} .watermark{position:absolute;right:32px;top:32px;opacity:.08;width:160px;height:auto;}</style></head><body><div class="page">${logo}<div class="header"><h1>${safeTitle}</h1><p>${escapeHtml(periodLabel)} • Real-time figures updated from current sample and analysis data.</p></div>`;
     html += `<div class="meta"><div class="meta-card"><span>${reportSummary.totalSamples}</span><small>Samples in period</small></div><div class="meta-card"><span>${reportSummary.totalResults}</span><small>Results generated</small></div><div class="meta-card"><span>${reportSummary.approvedResults}</span><small>Approved results</small></div><div class="meta-card"><span>${reportSummary.issuedCOAs}</span><small>COAs issued</small></div></div>`;
-    html += `<div class="section"><div class="section-title">Period Summary</div><div class="summary-text">This ${reportFrequency} report covers ${periodRange.start.toLocaleDateString('en-GB')} to ${periodRange.end.toLocaleDateString('en-GB')} and includes ${filteredSamples.length} registered samples, ${filteredResults.length} analysed results, total extracted tonnage of ${totalTonnage.toFixed(2)} t, and average moisture of ${avgMoisture}%.</div></div>`;
+    html += `<div class="section"><div class="section-title">Period Summary</div><div class="summary-text">This ${escapeHtml(reportFrequency)} report covers ${periodRange.start.toLocaleDateString('en-GB')} to ${periodRange.end.toLocaleDateString('en-GB')} and includes ${filteredSamples.length} registered samples, ${filteredResults.length} analysed results, total extracted tonnage of ${totalTonnage.toFixed(2)} t, and average moisture of ${avgMoisture}%.</div></div>`;
     html += `<div class="section"><div class="section-title">Detailed Results (${rows.length})</div><table><thead><tr><th>Date</th><th>Week</th><th>Report</th><th>Origin</th><th>Tonnage</th><th>Moisture</th><th>Al₂O₃</th><th>SiO₂</th><th>Fe₂O₃</th><th>TiO₂</th><th>LOI</th></tr></thead><tbody>`;
-    rows.forEach((r) => { html += `<tr><td>${r.date}</td><td>${r.week}</td><td>${r.reportNo}</td><td>${r.origin}</td><td>${r.tonnage}</td><td>${r.moisture}</td><td>${r.al2o3}</td><td>${r.sio2}</td><td>${r.fe2o3}</td><td>${r.tio2}</td><td>${r.loi}</td></tr>`; });
+    rows.forEach((r) => { html += `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.week)}</td><td>${escapeHtml(r.reportNo)}</td><td>${escapeHtml(r.origin)}</td><td>${escapeHtml(r.tonnage)}</td><td>${escapeHtml(r.moisture)}</td><td>${escapeHtml(r.al2o3)}</td><td>${escapeHtml(r.sio2)}</td><td>${escapeHtml(r.fe2o3)}</td><td>${escapeHtml(r.tio2)}</td><td>${escapeHtml(r.loi)}</td></tr>`; });
     html += `</tbody></table></div>`;
     html += `<div class="section"><div class="section-title">Weighted Averages (tonnage weighted)</div><table><thead><tr><th>Constituent</th><th>Weighted Mean</th></tr></thead><tbody>`;
-    constituents.forEach((k) => { html += `<tr><td>${k.toUpperCase()}</td><td>${weighted[k]}%</td></tr>`; });
+    constituents.forEach((k) => { html += `<tr><td>${escapeHtml(k.toUpperCase())}</td><td>${escapeHtml(weighted[k])}%</td></tr>`; });
     html += `</tbody></table></div></div></body></html>`; return html;
   };
 

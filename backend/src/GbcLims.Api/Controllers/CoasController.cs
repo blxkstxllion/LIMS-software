@@ -16,11 +16,13 @@ public class CoasController : ControllerBase
 {
     private readonly GbcLimsDbContext _context;
     private readonly AuditLogService _auditLogService;
+    private readonly ILogger<CoasController> _logger;
 
-    public CoasController(GbcLimsDbContext context, AuditLogService auditLogService)
+    public CoasController(GbcLimsDbContext context, AuditLogService auditLogService, ILogger<CoasController> logger)
     {
         _context = context;
         _auditLogService = auditLogService;
+        _logger = logger;
     }
 
     // The frontend refers to samples by their human-readable SampleNumber, not the
@@ -101,80 +103,104 @@ public class CoasController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] string? sampleId)
     {
-        var query = _context.Coas.Include(c => c.Sample).AsQueryable();
-        if (!string.IsNullOrWhiteSpace(sampleId))
+        try
         {
-            var sample = await ResolveSampleAsync(sampleId);
-            if (sample is null) return Ok(new { items = Array.Empty<CoaDto>() });
-            query = query.Where(c => c.SampleId == sample.Id);
+            var query = _context.Coas.Include(c => c.Sample).AsQueryable();
+            if (!string.IsNullOrWhiteSpace(sampleId))
+            {
+                var sample = await ResolveSampleAsync(sampleId);
+                if (sample is null) return Ok(new { items = Array.Empty<CoaDto>() });
+                query = query.Where(c => c.SampleId == sample.Id);
+            }
+            var coas = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
+            var items = new List<CoaDto>();
+            foreach (var coa in coas)
+            {
+                items.Add(await BuildCoaDtoAsync(coa));
+            }
+            return Ok(new { items });
         }
-        var coas = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
-        var items = new List<CoaDto>();
-        foreach (var coa in coas)
+        catch (Exception ex)
         {
-            items.Add(await BuildCoaDtoAsync(coa));
+            _logger.LogError(ex, "COA query failed");
+            return StatusCode(500, new { message = "Unable to load COAs at the moment." });
         }
-        return Ok(new { items });
     }
 
     [HttpPost]
     [Authorize(Policy = "CanGenerateCoas")]
     public async Task<IActionResult> Create([FromBody] CreateCoaRequest request)
     {
-        var sample = await ResolveSampleAsync(request.SampleId);
-        if (sample is null) return NotFound();
-
-        var coa = new Coa
+        try
         {
-            Id = Guid.NewGuid(),
-            CoaNumber = request.CoaNumber,
-            SampleId = sample.Id,
-            Sample = sample,
-            ClientName = request.ClientName,
-            ClientAddress = request.ClientAddress,
-            ClientContact = request.ClientContact,
-            IncludeResults = request.IncludeResults,
-            IncludeMethodology = request.IncludeMethodology,
-            IncludeQcData = request.IncludeQcData,
-            Remarks = request.Remarks,
-            IssueDate = request.IssueDate,
-            Status = "Draft",
-            GeneratedBy = User.FindFirst(ClaimTypes.Name)?.Value ?? "system",
-            GeneratedDate = DateTimeOffset.UtcNow,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
+            var sample = await ResolveSampleAsync(request.SampleId);
+            if (sample is null) return NotFound();
 
-        _context.Coas.Add(coa);
-        await _context.SaveChangesAsync();
-        await _auditLogService.LogAsync("Create", "CoA", nameof(Coa), coa.Id.ToString(), "COA generated", Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, sample.Id);
-        var dto = await BuildCoaDtoAsync(coa);
-        return CreatedAtAction(nameof(Get), new { sampleId = sample.Id }, dto);
+            var coa = new Coa
+            {
+                Id = Guid.NewGuid(),
+                CoaNumber = request.CoaNumber,
+                SampleId = sample.Id,
+                Sample = sample,
+                ClientName = request.ClientName,
+                ClientAddress = request.ClientAddress,
+                ClientContact = request.ClientContact,
+                IncludeResults = request.IncludeResults,
+                IncludeMethodology = request.IncludeMethodology,
+                IncludeQcData = request.IncludeQcData,
+                Remarks = request.Remarks,
+                IssueDate = request.IssueDate,
+                Status = "Draft",
+                GeneratedBy = User.FindFirst(ClaimTypes.Name)?.Value ?? "system",
+                GeneratedDate = DateTimeOffset.UtcNow,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            _context.Coas.Add(coa);
+            await _context.SaveChangesAsync();
+            await _auditLogService.LogAsync("Create", "CoA", nameof(Coa), coa.Id.ToString(), "COA generated", Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, sample.Id);
+            var dto = await BuildCoaDtoAsync(coa);
+            return CreatedAtAction(nameof(Get), new { sampleId = sample.Id }, dto);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "COA create failed");
+            return StatusCode(500, new { message = "Unable to generate COA at the moment." });
+        }
     }
 
     [HttpPatch("{id}/status")]
     [Authorize(Policy = "CanGenerateCoas")]
     public async Task<IActionResult> UpdateStatus(string id, [FromBody] UpdateCoaStatusRequest request)
     {
-        var coa = await ResolveCoaAsync(id);
-        if (coa is null) return NotFound();
-
-        var canonicalStatuses = new[] { "Draft", "Approved", "Issued" };
-        var nextStatus = canonicalStatuses.FirstOrDefault(s => string.Equals(s, request.Status, StringComparison.OrdinalIgnoreCase));
-        if (nextStatus is null) return BadRequest(new { message = "Unknown status" });
-
-        if (!CoaStatusTransitions.TryGetValue(coa.Status, out var allowed) || !allowed.Contains(nextStatus, StringComparer.OrdinalIgnoreCase))
+        try
         {
-            return BadRequest(new { message = "Invalid status transition" });
-        }
+            var coa = await ResolveCoaAsync(id);
+            if (coa is null) return NotFound();
 
-        coa.Status = nextStatus;
-        coa.UpdatedAt = DateTimeOffset.UtcNow;
-        await _context.SaveChangesAsync();
-        var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
-        await _auditLogService.LogAsync("Update", "CoA", nameof(Coa), coa.Id.ToString(), $"COA status changed to {nextStatus}", userId, User.Identity?.Name, coa.SampleId);
-        var dto = await BuildCoaDtoAsync(coa);
-        return Ok(dto);
+            var canonicalStatuses = new[] { "Draft", "Approved", "Issued" };
+            var nextStatus = canonicalStatuses.FirstOrDefault(s => string.Equals(s, request.Status, StringComparison.OrdinalIgnoreCase));
+            if (nextStatus is null) return BadRequest(new { message = "Unknown status" });
+
+            if (!CoaStatusTransitions.TryGetValue(coa.Status, out var allowed) || !allowed.Contains(nextStatus, StringComparer.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Invalid status transition" });
+            }
+
+            coa.Status = nextStatus;
+            coa.UpdatedAt = DateTimeOffset.UtcNow;
+            await _context.SaveChangesAsync();
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            await _auditLogService.LogAsync("Update", "CoA", nameof(Coa), coa.Id.ToString(), $"COA status changed to {nextStatus}", userId, User.Identity?.Name, coa.SampleId);
+            var dto = await BuildCoaDtoAsync(coa);
+            return Ok(dto);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "COA status update failed for id {CoaId}", id);
+            return StatusCode(500, new { message = "Unable to update COA status at the moment." });
+        }
     }
 
     public record CreateCoaRequest(string CoaNumber, string SampleId, string ClientName, string? ClientAddress, string? ClientContact, bool IncludeResults, bool IncludeMethodology, bool IncludeQcData, string? Remarks, DateTimeOffset IssueDate);
