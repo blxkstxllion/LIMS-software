@@ -28,5 +28,8 @@ obj/
 .vs/
 *.user
 
+# Local file storage for uploaded attachments (dev/local disk provider)
+backend/src/GbcLims.Api/App_Data/
+
 # Claude Code local settings (machine/session-specific, not shared config)
 .claude/settings.local.json

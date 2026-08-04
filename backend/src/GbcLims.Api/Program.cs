@@ -143,9 +143,17 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<GbcLimsDbContext>();
     try
     {
-        // No EF Core migrations exist yet for this schema; EnsureCreated builds it
-        // directly from the model on both the in-memory and relational providers.
-        db.Database.EnsureCreated();
+        // Migrate() applies versioned migrations and only works against a real relational
+        // provider; the InMemory fallback used when DefaultConnection is unset (local dev
+        // without Postgres) doesn't support migrations at all, so it still needs EnsureCreated.
+        if (db.Database.IsRelational())
+        {
+            db.Database.Migrate();
+        }
+        else
+        {
+            db.Database.EnsureCreated();
+        }
     }
     catch (Exception ex)
     {

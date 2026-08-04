@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { USERS, ROLE_LABELS, ROLE_COLORS, PERMISSIONS } from "../constants/lims";
+import { ROLE_LABELS, ROLE_COLORS, PERMISSIONS } from "../constants/lims";
 import { formatDate, statusColor, statusBg, priorityColor, priorityBg } from "../utils/lims";
 import { Badge, Modal, Input, Select, Textarea, Button, StatCard } from "../components/shared";
-import { generateAuditLogs } from "../services/sampleService";
+import { fetchUsers, createUser, updateUser, updateUserStatus, fetchAuditLogs } from "../services/userService";
+import { fetchFiles, uploadFile, downloadFile, deleteFile } from "../services/fileService";
+import { fetchQcSamples, createQcSample } from "../services/qcService";
 export function SampleRegistration({ user, onSampleAdded, showToast }) {
   const [form, setForm] = useState({ origin:"", sampleSource:"", location:"", quantity:"", unit:"kg", tonnage:"", priority:"Medium", submittedBy:"", receivedBy:user.name, batchNumber:"", notes:"", sampleFrequency:"", dailyTime:"", sublotNumber:"" });
   const [generatedId, setGeneratedId] = useState("");
@@ -761,26 +763,32 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
 }
 
 export function QCManagement({ user, samples, showToast }) {
-  const [qcSamples, setQcSamples] = useState([
-    { id:"QC-001", type:"Standard", refId:"STD-REF-001", expectedAl2o3:"47.50", actualAl2o3:"47.62", variance:0.25, status:"Pass", date:"2025-05-12", createdBy:"John Doe" },
-    { id:"QC-002", type:"Blank", refId:"", expectedAl2o3:"0.00", actualAl2o3:"0.01", variance:0.01, status:"Pass", date:"2025-05-12", createdBy:"John Doe" },
-    { id:"QC-003", type:"Duplicate", refId:"GBC-2025-100001", expectedAl2o3:"44.30", actualAl2o3:"46.80", variance:5.64, status:"Fail", date:"2025-05-11", createdBy:"John Doe" },
-    { id:"QC-004", type:"Spike", refId:"GBC-2025-100002", expectedAl2o3:"50.00", actualAl2o3:"49.85", variance:0.30, status:"Pass", date:"2025-05-11", createdBy:"John Doe" },
-  ]);
+  const [qcSamples, setQcSamples] = useState([]);
+  const [qcLoading, setQcLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type:"Standard", refId:"", expectedAl2o3:"", actualAl2o3:"" });
 
+  useEffect(() => {
+    fetchQcSamples().then(setQcSamples).catch((error) => { console.error("Failed to load QC samples", error); showToast("Unable to load QC samples.", "error"); }).finally(() => setQcLoading(false));
+  }, []);
+
   const passRate = qcSamples.length ? (qcSamples.filter((q)=>q.status === "Pass").length / qcSamples.length * 100).toFixed(0) : 0;
-  const addQC = () => {
-    const variance = form.expectedAl2o3 && form.actualAl2o3 ? Math.abs((parseFloat(form.actualAl2o3)-parseFloat(form.expectedAl2o3))/parseFloat(form.expectedAl2o3)*100).toFixed(2) : 0;
-    const status = parseFloat(variance) <= 2 ? "Pass" : "Fail";
-    const newQC = { id:`QC-${String(qcSamples.length+1).padStart(3,"0")}`, ...form, variance:parseFloat(variance), status, date:new Date().toISOString().split("T")[0], createdBy:user.name };
-    setQcSamples((p)=>[...p, newQC]);
-    showToast(`QC sample added. Result: ${status}`, status === "Pass" ? "success" : "warning");
-    setShowForm(false); setForm({ type:"Standard", refId:"", expectedAl2o3:"", actualAl2o3:"" });
+  const addQC = async () => {
+    if (!form.expectedAl2o3 || !form.actualAl2o3) { showToast("Enter expected and actual Al₂O₃ values.", "error"); return; }
+    try {
+      const qcNumber = `QC-${String(qcSamples.length+1).padStart(3,"0")}`;
+      const created = await createQcSample({ qcNumber, ...form });
+      setQcSamples((p)=>[created, ...p]);
+      showToast(`QC sample added. Result: ${created.status}`, created.status === "Pass" ? "success" : "warning");
+      setShowForm(false); setForm({ type:"Standard", refId:"", expectedAl2o3:"", actualAl2o3:"" });
+    } catch (error) {
+      console.error("Failed to add QC sample", error);
+      showToast(error.message || "Unable to add QC sample.", "error");
+    }
   };
 
   const chartData = [{ month:"Jan", pass:92, fail:8 }, { month:"Feb", pass:95, fail:5 }, { month:"Mar", pass:88, fail:12 }, { month:"Apr", pass:96, fail:4 }, { month:"May", pass:parseInt(passRate), fail:100-parseInt(passRate) }];
+  const typeCounts = ["Standard","Blank","Duplicate","Spike"].map((t) => ({ name:t, value: qcSamples.filter((q)=>q.type===t).length }));
 
   return (
     <div style={{ padding:28 }}>
@@ -807,7 +815,7 @@ export function QCManagement({ user, samples, showToast }) {
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}>
           <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:16 }}>QC by Sample Type</div>
           <ResponsiveContainer width="100%" height={200}>
-            <PieChart><Pie data={[{name:"Standard",value:2},{name:"Blank",value:1},{name:"Duplicate",value:1},{name:"Spike",value:1}]} cx="50%" cy="50%" outerRadius={80} dataKey="value" label>{["#3b82f6","#22c55e","#f59e0b","#ef4444"].map((c,i)=><Cell key={i} fill={c} />)}</Pie><Tooltip /></PieChart>
+            <PieChart><Pie data={typeCounts} cx="50%" cy="50%" outerRadius={80} dataKey="value" label>{["#3b82f6","#22c55e","#f59e0b","#ef4444"].map((c,i)=><Cell key={i} fill={c} />)}</Pie><Tooltip /></PieChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -856,21 +864,55 @@ export function QCManagement({ user, samples, showToast }) {
 }
 
 export function FileManagement({ user, showToast }) {
-  const [files, setFiles] = useState([
-    { id:1, name:"COA-Jan-2025-Batch-001.pdf", type:"PDF", size:"1.2 MB", uploadedBy:"Dr. Robert Taylor", date:"2025-05-10", group:"Jan 2025 COAs", sampleId:"GBC-2025-100001" },
-    { id:2, name:"XRF-Calibration-May2025.xlsx", type:"Excel", size:"456 KB", uploadedBy:"John Doe", date:"2025-05-08", group:"Calibration Records", sampleId:"" },
-    { id:3, name:"QC-Standards-Reference.pdf", type:"PDF", size:"890 KB", uploadedBy:"Dr. Mary Johnson", date:"2025-05-07", group:"QC Standards", sampleId:"" },
-    { id:4, name:"Lab-Photo-Team-2025.jpg", type:"Image", size:"3.4 MB", uploadedBy:"Samuel Mensah", date:"2025-05-05", group:"General", sampleId:"" },
-    { id:5, name:"Results-Export-Apr2025.csv", type:"CSV", size:"234 KB", uploadedBy:"John Doe", date:"2025-05-01", group:"Exports", sampleId:"" },
-  ]);
+  const [files, setFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(true);
   const [drag, setDrag] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    fetchFiles().then(setFiles).catch((error) => { console.error("Failed to load files", error); showToast("Unable to load files.", "error"); }).finally(() => setFilesLoading(false));
+  }, []);
+
+  const uploadFiles = async (fileList) => {
+    const selected = Array.from(fileList);
+    if (!selected.length) return;
+    setUploading(true);
+    try {
+      const uploaded = await Promise.all(selected.map((f) => uploadFile(f, { group: "General" })));
+      setFiles((p)=>[...uploaded, ...p]);
+      showToast(`${uploaded.length} file(s) uploaded successfully.`, "success");
+    } catch (error) {
+      console.error("Failed to upload file(s)", error);
+      showToast(error.message || "Unable to upload file(s).", "error");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleDrop = (e) => {
     e.preventDefault(); setDrag(false);
-    const newFiles = Array.from(e.dataTransfer.files).map((f,i) => ({ id: files.length + i + 1, name:f.name, type: f.type.includes("pdf") ? "PDF" : f.type.includes("sheet") ? "Excel" : f.type.includes("image") ? "Image" : "Other", size:`${(f.size/1024).toFixed(0)} KB`, uploadedBy:user.name, date:new Date().toISOString().split("T")[0], group:"General", sampleId:"" }));
-    setFiles((p)=>[...newFiles,...p]);
-    showToast(`${newFiles.length} file(s) uploaded successfully.`, "success");
+    uploadFiles(e.dataTransfer.files);
+  };
+
+  const handleDownload = async (f) => {
+    try {
+      await downloadFile(f.id, f.name);
+    } catch (error) {
+      console.error("Failed to download file", error);
+      showToast("Unable to download file.", "error");
+    }
+  };
+
+  const handleDelete = async (f) => {
+    try {
+      await deleteFile(f.id);
+      setFiles((p)=>p.filter((x)=>x.id!==f.id));
+      showToast("File deleted.","success");
+    } catch (error) {
+      console.error("Failed to delete file", error);
+      showToast(error.message || "Unable to delete file.", "error");
+    }
   };
 
   const typeIcon = (t) => ({ PDF:"📄", Excel:"📊", Image:"🖼️", CSV:"📋", Word:"📝" }[t] || "📁");
@@ -880,10 +922,10 @@ export function FileManagement({ user, showToast }) {
   return (
     <div style={{ padding:28 }}>
       <h1 style={{ fontSize:22, fontWeight:800, color:"#111827", margin:"0 0 8px" }}>File Management</h1>
-      <p style={{ color:"#6b7280", fontSize:14, margin:"0 0 24px" }}>{files.length} files · {totalSize.toFixed(0)} KB total</p>
+      <p style={{ color:"#6b7280", fontSize:14, margin:"0 0 24px" }}>{filesLoading ? "Loading…" : `${files.length} files · ${totalSize.toFixed(0)} KB total`}</p>
       <div onDragOver={(e)=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={handleDrop} style={{ border:`2px dashed ${drag?"#1e3a8a":"#d1d5db"}`, borderRadius:12, padding:36, textAlign:"center", background: drag?"#eff6ff":"#f9fafb", marginBottom:24, transition:"all 0.15s" }}>
         <div style={{ fontSize:40, marginBottom:10 }}>📁</div>
-        <div style={{ fontSize:15, fontWeight:600, color:"#374151", marginBottom:4 }}>Drag & Drop files here</div>
+        <div style={{ fontSize:15, fontWeight:600, color:"#374151", marginBottom:4 }}>{uploading ? "Uploading…" : "Drag & Drop files here"}</div>
         <div style={{ fontSize:13, color:"#9ca3af" }}>Supported: PDF, Excel, Word, Images, CSV · Max 50MB per file</div>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, marginBottom:24 }}>
@@ -904,7 +946,7 @@ export function FileManagement({ user, showToast }) {
                 <td style={{ padding:"10px 12px", color:"#374151" }}>{f.group}</td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{f.uploadedBy}</td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{formatDate(f.date)}</td>
-                <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>⬇ Download</button>{(user.role === "admin" || f.uploadedBy === user.name) && <button onClick={()=>{setFiles((p)=>p.filter((x)=>x.id!==f.id));showToast("File deleted.","success");}} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>🗑</button>}</div></td>
+                <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>handleDownload(f)} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>⬇ Download</button>{(user.role === "admin" || f.uploadedBy === user.name) && <button onClick={()=>handleDelete(f)} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>🗑</button>}</div></td>
               </tr>
             ))}
           </tbody>
@@ -1043,27 +1085,58 @@ export function Reports({ samples, results, coas }) {
 }
 
 export function AdminPanel({ user, showToast }) {
-  const [users, setUsers] = useState(USERS.map((u)=>({...u})));
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("users");
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [newUser, setNewUser] = useState({ staffId:"", name:"", email:"", role:"xrf_chemist", department:"Laboratory", password:"", status:"Active" });
-  const [auditLogs] = useState(generateAuditLogs());
+  const [auditLogs, setAuditLogs] = useState([]);
   const [auditSearch, setAuditSearch] = useState("");
+
+  useEffect(() => {
+    if (user.role !== "admin") return;
+    fetchUsers().then(setUsers).catch((error) => { console.error("Failed to load users", error); showToast("Unable to load users.", "error"); }).finally(() => setUsersLoading(false));
+    fetchAuditLogs().then(setAuditLogs).catch((error) => console.error("Failed to load audit logs", error));
+  }, [user.role]);
 
   if (user.role !== "admin") return <div style={{ padding:40, textAlign:"center", color:"#991b1b" }}>⛔ Admin access required.</div>;
 
-  const addUser = () => {
-    if (!newUser.staffId || !newUser.name || !newUser.email) { showToast("Fill all required fields.", "error"); return; }
-    setUsers((p)=>[...p, {...newUser}]);
-    showToast(`User ${newUser.name} added.`, "success");
-    setShowAddUser(false);
-    setNewUser({ staffId:"", name:"", email:"", role:"xrf_chemist", department:"Laboratory", password:"", status:"Active" });
+  const addUser = async () => {
+    if (!newUser.staffId || !newUser.name || !newUser.email || !newUser.password) { showToast("Fill all required fields.", "error"); return; }
+    try {
+      const created = await createUser(newUser);
+      setUsers((p)=>[...p, created]);
+      showToast(`User ${newUser.name} added.`, "success");
+      setShowAddUser(false);
+      setNewUser({ staffId:"", name:"", email:"", role:"xrf_chemist", department:"Laboratory", password:"", status:"Active" });
+    } catch (error) {
+      console.error("Failed to create user", error);
+      showToast(error.message || "Unable to create user.", "error");
+    }
   };
 
-  const saveEdit = () => {
-    setUsers((p)=>p.map((u)=>u.staffId===editUser.staffId?editUser:u));
-    showToast("User updated.", "success"); setEditUser(null);
+  const saveEdit = async () => {
+    try {
+      const updated = await updateUser(editUser.staffId, editUser);
+      setUsers((p)=>p.map((u)=>u.staffId===updated.staffId?updated:u));
+      showToast("User updated.", "success"); setEditUser(null);
+    } catch (error) {
+      console.error("Failed to update user", error);
+      showToast(error.message || "Unable to update user.", "error");
+    }
+  };
+
+  const toggleUserStatus = async (u) => {
+    const nextStatus = u.status === "Active" ? "Suspended" : "Active";
+    try {
+      const updated = await updateUserStatus(u.staffId, nextStatus);
+      setUsers((p)=>p.map((x)=>x.staffId===u.staffId?updated:x));
+      showToast(`User ${nextStatus === "Suspended" ? "suspended" : "activated"}.`,"warning");
+    } catch (error) {
+      console.error("Failed to update user status", error);
+      showToast(error.message || "Unable to update user status.", "error");
+    }
   };
 
   const filteredLogs = auditLogs.filter((l) => !auditSearch || l.userName.toLowerCase().includes(auditSearch.toLowerCase()) || l.action.toLowerCase().includes(auditSearch.toLowerCase()) || l.module.toLowerCase().includes(auditSearch.toLowerCase()));
@@ -1079,7 +1152,7 @@ export function AdminPanel({ user, showToast }) {
       {activeTab === "users" && (
         <div>
           <div style={{ display:"flex", justifyContent:"space-between", marginBottom:16 }}>
-            <div style={{ fontSize:14, color:"#6b7280" }}>{users.length} registered users</div>
+            <div style={{ fontSize:14, color:"#6b7280" }}>{usersLoading ? "Loading…" : `${users.length} registered users`}</div>
             <Button onClick={()=>setShowAddUser(true)} variant="primary">+ Add User</Button>
           </div>
           <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
@@ -1094,8 +1167,8 @@ export function AdminPanel({ user, showToast }) {
                     <td style={{ padding:"10px 12px" }}><Badge text={ROLE_LABELS[u.role]} color={ROLE_COLORS[u.role]} bg={ROLE_COLORS[u.role] + "15"} small /></td>
                     <td style={{ padding:"10px 12px", color:"#374151" }}>{u.department}</td>
                     <td style={{ padding:"10px 12px" }}><Badge text={u.status||"Active"} color={u.status=== "Active"?"#166534":"#991b1b"} bg={u.status=== "Active"?"#dcfce7":"#fee2e2"} small /></td>
-                    <td style={{ padding:"10px 12px", color:"#9ca3af", fontSize:12 }}>{u.lastLogin}</td>
-                    <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>setEditUser({...u})} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>Edit</button><button onClick={()=>{setUsers((p)=>p.map((x)=>x.staffId===u.staffId?{...x,status:x.status=== "Active"?"Suspended":"Active"}:x));showToast(`User ${u.status === "Active" ? "suspended" : "activated"}.`,"warning");}} style={{ padding:"3px 8px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>{u.status === "Active" ? "Suspend" : "Activate"}</button></div></td>
+                    <td style={{ padding:"10px 12px", color:"#9ca3af", fontSize:12 }}>{formatDate(u.lastLogin)}</td>
+                    <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>setEditUser({...u})} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>Edit</button><button onClick={()=>toggleUserStatus(u)} style={{ padding:"3px 8px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>{u.status === "Active" ? "Suspend" : "Activate"}</button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -1153,7 +1226,6 @@ export function AdminPanel({ user, showToast }) {
             <Input label="Full Name" value={editUser.name} onChange={(v)=>setEditUser((p)=>({...p,name:v}))} />
             <Input label="Email" value={editUser.email} onChange={(v)=>setEditUser((p)=>({...p,email:v}))} type="email" />
             <Select label="Role" value={editUser.role} onChange={(v)=>setEditUser((p)=>({...p,role:v}))} options={Object.entries(ROLE_LABELS).map(([k,l])=>({value:k,label:l}))} />
-            <Select label="Status" value={editUser.status || "Active"} onChange={(v)=>setEditUser((p)=>({...p,status:v}))} options={["Active","Inactive","Suspended"]} />
             <Input label="Department" value={editUser.department} onChange={(v)=>setEditUser((p)=>({...p,department:v}))} />
           </div>
           <div style={{ display:"flex", gap:12 }}>

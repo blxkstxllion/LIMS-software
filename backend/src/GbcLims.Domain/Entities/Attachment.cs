@@ -3,8 +3,11 @@ namespace GbcLims.Domain.Entities;
 public class Attachment
 {
     public Guid Id { get; set; }
-    public Guid SampleId { get; set; }
-    public Sample Sample { get; set; } = null!;
+    // Nullable: File Management holds plenty of files with no single sample they belong
+    // to (calibration records, QC standard references, general lab photos), not just
+    // per-sample scans.
+    public Guid? SampleId { get; set; }
+    public Sample? Sample { get; set; }
     public string FileName { get; set; } = string.Empty;
     public string StoredFileName { get; set; } = string.Empty;
     public string ContentType { get; set; } = string.Empty;

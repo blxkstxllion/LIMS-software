@@ -39,6 +39,10 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid credentials" });
         }
 
+        // Checked after the password check (not before) so a suspended account's
+        // password failures still count toward lockout the same as any other account.
+        if (!user.IsActive) return Unauthorized(new { message = "Account suspended" });
+
         var token = await GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
         user.RefreshToken = refreshToken;
@@ -59,7 +63,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request)
     {
         var user = await _userManager.Users.SingleOrDefaultAsync(u => u.RefreshToken == request.RefreshToken);
-        if (user is null || user.RefreshTokenExpiryTime is null || user.RefreshTokenExpiryTime <= DateTimeOffset.UtcNow)
+        if (user is null || user.RefreshTokenExpiryTime is null || user.RefreshTokenExpiryTime <= DateTimeOffset.UtcNow || !user.IsActive)
         {
             return Unauthorized(new { message = "Invalid refresh token" });
         }

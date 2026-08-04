@@ -15,6 +15,7 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
     public DbSet<Coa> Coas => Set<Coa>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<QcSample> QcSamples => Set<QcSample>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,13 +66,26 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
 
         modelBuilder.Entity<Attachment>(entity =>
         {
-            entity.HasOne(e => e.Sample).WithMany(s => s.Attachments).HasForeignKey(e => e.SampleId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Sample).WithMany(s => s.Attachments).HasForeignKey(e => e.SampleId).OnDelete(DeleteBehavior.Cascade).IsRequired(false);
         });
 
         modelBuilder.Entity<AuditLog>(entity =>
         {
             entity.HasOne(e => e.User).WithMany(u => u.AuditLogs).HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.Sample).WithMany(s => s.AuditLogs).HasForeignKey(e => e.SampleId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<QcSample>(entity =>
+        {
+            entity.HasIndex(e => e.QcNumber).IsUnique();
+            entity.Property(e => e.ExpectedAl2O3).HasPrecision(12, 3);
+            entity.Property(e => e.ActualAl2O3).HasPrecision(12, 3);
+            entity.Property(e => e.Variance).HasPrecision(12, 3);
+            // SetNull, not Cascade: a QC record is a lab-quality artifact in its own
+            // right — deleting the sample it happened to reference shouldn't also erase
+            // the QC history that used it as a check.
+            entity.HasOne(e => e.ReferenceSample).WithMany().HasForeignKey(e => e.ReferenceSampleId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.CreatedBy).WithMany().HasForeignKey(e => e.CreatedById).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

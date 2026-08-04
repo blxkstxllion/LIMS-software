@@ -112,3 +112,43 @@ export function getStoredAuthUser() {
 export async function apiRequest(path, options = {}) {
   return request(path, options);
 }
+
+// Separate from apiRequest because buildHeaders() always forces
+// "Content-Type: application/json" — fine for JSON bodies, but a multipart upload
+// needs the browser to set its own Content-Type with the multipart boundary, which
+// only happens if the header is left unset entirely.
+export async function apiUpload(path, formData) {
+  const token = localStorage.getItem("gbc_access_token");
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// Downloads go through fetch (not a plain <a href>) because the endpoint requires the
+// Bearer token; the response is turned into a blob URL just long enough to trigger the
+// browser's save dialog, then released.
+export async function apiDownload(path, fileName) {
+  const token = localStorage.getItem("gbc_access_token");
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
