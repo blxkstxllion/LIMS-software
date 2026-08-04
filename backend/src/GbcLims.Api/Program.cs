@@ -10,6 +10,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
+// Constrained containers (Render's free tier included) cap the number of inotify
+// watch instances low enough that .NET's default "watch appsettings.json for live
+// changes" file watcher fails outright during CreateBuilder, crashing the process
+// before it ever starts listening. Set in code (not left to a dashboard env var)
+// so this holds on any host, not just one configured correctly by hand — a
+// deployed container is redeployed to change config, never hot-edited in place,
+// so losing live-reload here costs nothing.
+Environment.SetEnvironmentVariable("DOTNET_hostBuilder__reloadConfigOnChange", "false");
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
