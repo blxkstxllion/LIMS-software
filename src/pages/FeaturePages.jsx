@@ -3,7 +3,7 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { ROLE_LABELS, ROLE_COLORS, PERMISSIONS } from "../constants/lims";
 import { formatDate, statusColor, statusBg, priorityColor, priorityBg } from "../utils/lims";
 import { Badge, Modal, Input, Select, Textarea, Button, StatCard } from "../components/shared";
-import { fetchUsers, createUser, updateUser, updateUserStatus, fetchAuditLogs } from "../services/userService";
+import { fetchUsers, createUser, updateUser, updateUserStatus, deleteUser, fetchAuditLogs } from "../services/userService";
 import { fetchFiles, uploadFile, downloadFile, deleteFile } from "../services/fileService";
 import { fetchQcSamples, createQcSample } from "../services/qcService";
 export function SampleRegistration({ user, onSampleAdded, showToast }) {
@@ -1139,6 +1139,18 @@ export function AdminPanel({ user, showToast }) {
     }
   };
 
+  const removeUser = async (u) => {
+    if (!window.confirm(`Permanently delete ${u.name} (${u.staffId})? This cannot be undone.`)) return;
+    try {
+      await deleteUser(u.staffId);
+      setUsers((p)=>p.filter((x)=>x.staffId!==u.staffId));
+      showToast(`User ${u.name} deleted.`, "success");
+    } catch (error) {
+      console.error("Failed to delete user", error);
+      showToast(error.message || "Unable to delete user.", "error");
+    }
+  };
+
   const filteredLogs = auditLogs.filter((l) => !auditSearch || l.userName.toLowerCase().includes(auditSearch.toLowerCase()) || l.action.toLowerCase().includes(auditSearch.toLowerCase()) || l.module.toLowerCase().includes(auditSearch.toLowerCase()));
   const tabs = [['users','👥 Users'],['settings','⚙️ Settings'],['audit','📋 Audit Logs'],['stats','📊 Statistics']];
 
@@ -1168,7 +1180,7 @@ export function AdminPanel({ user, showToast }) {
                     <td style={{ padding:"10px 12px", color:"#374151" }}>{u.department}</td>
                     <td style={{ padding:"10px 12px" }}><Badge text={u.status||"Active"} color={u.status=== "Active"?"#166534":"#991b1b"} bg={u.status=== "Active"?"#dcfce7":"#fee2e2"} small /></td>
                     <td style={{ padding:"10px 12px", color:"#9ca3af", fontSize:12 }}>{formatDate(u.lastLogin)}</td>
-                    <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>setEditUser({...u})} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>Edit</button><button onClick={()=>toggleUserStatus(u)} style={{ padding:"3px 8px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>{u.status === "Active" ? "Suspend" : "Activate"}</button></div></td>
+                    <td style={{ padding:"10px 12px" }}><div style={{ display:"flex", gap:6 }}><button onClick={()=>setEditUser({...u})} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>Edit</button><button onClick={()=>toggleUserStatus(u)} style={{ padding:"3px 8px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>{u.status === "Active" ? "Suspend" : "Activate"}</button>{u.staffId !== user.staffId && <button onClick={()=>removeUser(u)} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>Delete</button>}</div></td>
                   </tr>
                 ))}
               </tbody>

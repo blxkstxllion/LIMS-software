@@ -40,6 +40,10 @@ export async function updateUserStatus(staffId, status) {
   return toUiUser(updated);
 }
 
+export async function deleteUser(staffId) {
+  return request(`/api/users/${staffId}`, { method: "DELETE" });
+}
+
 export async function fetchAuditLogs() {
   const logs = await request("/api/auditlogs");
   return (logs || []).map((log) => ({

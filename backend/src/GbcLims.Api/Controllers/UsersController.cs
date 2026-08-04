@@ -1,5 +1,6 @@
 using GbcLims.Api.Services;
 using GbcLims.Domain.Entities;
+using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -13,12 +14,14 @@ namespace GbcLims.Api.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly GbcLimsDbContext _context;
     private readonly AuditLogService _auditLogService;
     private readonly ILogger<UsersController> _logger;
 
-    public UsersController(UserManager<ApplicationUser> userManager, AuditLogService auditLogService, ILogger<UsersController> logger)
+    public UsersController(UserManager<ApplicationUser> userManager, GbcLimsDbContext context, AuditLogService auditLogService, ILogger<UsersController> logger)
     {
         _userManager = userManager;
+        _context = context;
         _auditLogService = auditLogService;
         _logger = logger;
     }
@@ -137,6 +140,48 @@ public class UsersController : ControllerBase
         {
             _logger.LogError(ex, "User status update failed for staffId {StaffId}", staffId);
             return StatusCode(500, new { message = "Unable to update user status at the moment." });
+        }
+    }
+
+    [HttpDelete("{staffId}")]
+    public async Task<IActionResult> Delete(string staffId)
+    {
+        try
+        {
+            var user = await _userManager.Users.SingleOrDefaultAsync(u => u.StaffId == staffId);
+            if (user is null) return NotFound();
+
+            var currentUserId = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            if (user.Id == currentUserId)
+            {
+                return BadRequest(new { message = "You cannot delete your own account." });
+            }
+
+            // Sample/Result/QcSample.CreatedBy is a Restrict foreign key specifically so
+            // deleting a user can never silently orphan the lab's chain-of-custody records —
+            // checked explicitly here (rather than letting the DB throw) so the admin gets a
+            // clear reason instead of a 500. Suspend is the correct action for these users.
+            var hasRecords = await _context.Samples.AnyAsync(s => s.CreatedById == user.Id)
+                || await _context.Results.AnyAsync(r => r.CreatedById == user.Id)
+                || await _context.QcSamples.AnyAsync(q => q.CreatedById == user.Id);
+            if (hasRecords)
+            {
+                return BadRequest(new { message = "This user has samples, results, or QC records on file and can't be deleted — suspend them instead to preserve the audit trail." });
+            }
+
+            var deleteResult = await _userManager.DeleteAsync(user);
+            if (!deleteResult.Succeeded)
+            {
+                return BadRequest(new { message = string.Join(" ", deleteResult.Errors.Select(e => e.Description)) });
+            }
+
+            await _auditLogService.LogAsync("Delete", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} deleted", currentUserId, User.Identity?.Name);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "User delete failed for staffId {StaffId}", staffId);
+            return StatusCode(500, new { message = "Unable to delete user at the moment." });
         }
     }
 
