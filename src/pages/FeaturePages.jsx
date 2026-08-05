@@ -8,8 +8,7 @@ import { fetchFiles, uploadFile, downloadFile, deleteFile } from "../services/fi
 import { fetchQcSamples, createQcSample } from "../services/qcService";
 import { fetchSamplesPaged } from "../services/sampleService";
 export function SampleRegistration({ user, onSampleAdded, showToast }) {
-  const [form, setForm] = useState({ origin:"", sampleSource:"", location:"", quantity:"", unit:"kg", tonnage:"", priority:"Medium", submittedBy:"", receivedBy:user.name, batchNumber:"", notes:"", sampleFrequency:"", dailyTime:"", sublotNumber:"" });
-  const [generatedId, setGeneratedId] = useState("");
+  const [form, setForm] = useState({ sampleId:"", origin:"", sampleSource:"", location:"", quantity:"", unit:"kg", tonnage:"", priority:"Medium", submittedBy:"", receivedBy:user.name, batchNumber:"", notes:"", sampleFrequency:"", dailyTime:"", sublotNumber:"" });
 
   const sourceOptions = {
     "Washing Plant": ["Conveyor sample","Truck sample","Washed","ROM"],
@@ -19,41 +18,17 @@ export function SampleRegistration({ user, onSampleAdded, showToast }) {
     "Other": ["Grab sample","Composite"],
   };
 
-  const generateId = useCallback((f) => {
-    if (f.origin === "Washing Plant" && f.sublotNumber) {
-      if (f.sampleFrequency === "Daily" && f.dailyTime) {
-        const code = { Morning:"M", Afternoon:"A", Night:"N" }[f.dailyTime] || "M";
-        return `${code}/SL=${f.sublotNumber}`;
-      }
-      if (f.sampleFrequency === "Weekly") {
-        const week = Math.ceil((new Date() - new Date(new Date().getFullYear(),0,1)) / (7*864e5));
-        const srcCode = { "Conveyor sample":"C","Truck sample":"T","Washed":"U","ROM":"R" }[f.sampleSource] || "C";
-        return `ASY-WK${week}-A${srcCode}-025-${f.sublotNumber}`;
-      }
-    }
-    const year = new Date().getFullYear();
-    const rand = String(Math.floor(100000 + Math.random() * 900000));
-    return `GBC-${year}-${rand}`;
-  }, []);
-
-  const set = (k, v) => {
-    const nf = {...form, [k]:v};
-    setForm(nf);
-    setGeneratedId(generateId(nf));
-  };
-
-  useEffect(() => { setGeneratedId(generateId(form)); }, [form, generateId]);
+  const set = (k, v) => setForm((p)=>({...p,[k]:v}));
 
   const handleSubmit = async () => {
-    if (!form.origin || !form.sampleSource || !form.location || !form.quantity || !form.submittedBy || !form.tonnage) {
+    if (!form.sampleId || !form.origin || !form.sampleSource || !form.location || !form.quantity || !form.submittedBy || !form.tonnage) {
       showToast("Please fill all required fields.", "error"); return;
     }
-    const sampleId = generatedId || generateId(form);
-    const sample = { id: sampleId, ...form, status:"Pending Verification", dateReceived: new Date().toISOString().split("T")[0], assignedTo:"", createdBy: user.staffId };
+    const sample = { id: form.sampleId, ...form, status:"Pending Verification", dateReceived: new Date().toISOString().split("T")[0], assignedTo:"", createdBy: user.staffId };
     try {
       await onSampleAdded(sample);
       showToast(`Sample ${sample.id} registered successfully!`, "success");
-      setForm({ origin:"", sampleSource:"", location:"", quantity:"", unit:"kg", tonnage:"", priority:"Medium", submittedBy:"", receivedBy:user.name, batchNumber:"", notes:"", sampleFrequency:"", dailyTime:"", sublotNumber:"" });
+      setForm({ sampleId:"", origin:"", sampleSource:"", location:"", quantity:"", unit:"kg", tonnage:"", priority:"Medium", submittedBy:"", receivedBy:user.name, batchNumber:"", notes:"", sampleFrequency:"", dailyTime:"", sublotNumber:"" });
     } catch (error) {
       showToast(error.message || "Sample registration failed.", "error");
     }
@@ -66,9 +41,9 @@ export function SampleRegistration({ user, onSampleAdded, showToast }) {
         <p style={{ color:"#6b7280", fontSize:14, margin:"4px 0 0" }}>Register a new sample for analysis</p>
       </div>
       <div style={{ background:"linear-gradient(135deg,#1e3a8a,#1e40af)", borderRadius:12, padding:20, marginBottom:28, color:"#fff" }}>
-        <div style={{ fontSize:12, fontWeight:600, letterSpacing:1, color:"#93c5fd", marginBottom:6 }}>GENERATED SAMPLE ID</div>
-        <div style={{ fontSize:28, fontWeight:900, fontFamily:"monospace", letterSpacing:2 }}>{generatedId || "—"}</div>
-        <div style={{ fontSize:12, color:"#bfdbfe", marginTop:4 }}>Auto-generated based on origin and sample details</div>
+        <label style={{ fontSize:12, fontWeight:600, letterSpacing:1, color:"#93c5fd", marginBottom:6, display:"block" }}>SAMPLE ID <span style={{color:"#fca5a5"}}>*</span></label>
+        <input value={form.sampleId} onChange={(e)=>set("sampleId", e.target.value)} placeholder="e.g. GBC-2025-100001" style={{ width:"100%", background:"rgba(255,255,255,0.12)", border:"1.5px solid rgba(255,255,255,0.3)", borderRadius:8, padding:"10px 14px", fontSize:22, fontWeight:900, fontFamily:"monospace", letterSpacing:1, color:"#fff", boxSizing:"border-box", outline:"none" }} />
+        <div style={{ fontSize:12, color:"#bfdbfe", marginTop:6 }}>Enter the sample's own tracking ID</div>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:28 }}>
         <div className="lims-grid-2" style={{ gap:"0 24px" }}>
@@ -111,13 +86,13 @@ export function SampleRegistration({ user, onSampleAdded, showToast }) {
             {form.sampleFrequency==="Daily" && (
               <Select label="Time of Day" value={form.dailyTime} onChange={(v)=>set("dailyTime",v)} options={["Morning","Afternoon","Night"]} />
             )}
-            <Input label="Sublot Number" value={form.sublotNumber} onChange={(v)=>set("sublotNumber",v)} placeholder="e.g. 12345" required note="Required for ID generation" />
+            <Input label="Sublot Number" value={form.sublotNumber} onChange={(v)=>set("sublotNumber",v)} placeholder="e.g. 12345" required />
           </div>
         )}
         <Textarea label="Notes" value={form.notes} onChange={(v)=>set("notes",v)} placeholder="Additional notes or special instructions…" />
         <div style={{ display:"flex", gap:12, marginTop:8 }}>
           <Button onClick={handleSubmit} variant="primary">✓ Register Sample</Button>
-          <Button variant="secondary" onClick={()=>setForm({origin:"",sampleSource:"",location:"",quantity:"",unit:"kg",tonnage:"",priority:"Medium",submittedBy:"",receivedBy:user.name,batchNumber:"",notes:"",sampleFrequency:"",dailyTime:"",sublotNumber:""})}>Clear Form</Button>
+          <Button variant="secondary" onClick={()=>setForm({sampleId:"",origin:"",sampleSource:"",location:"",quantity:"",unit:"kg",tonnage:"",priority:"Medium",submittedBy:"",receivedBy:user.name,batchNumber:"",notes:"",sampleFrequency:"",dailyTime:"",sublotNumber:""})}>Clear Form</Button>
         </div>
       </div>
     </div>
