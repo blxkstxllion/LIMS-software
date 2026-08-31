@@ -496,7 +496,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         {canCreate && <Button onClick={()=>setViewList(false)} variant="primary">+ New Result</Button>}
       </div>
       {canApprove && (() => {
-        const pendingApproval = results.filter((r) => r.status === "Submitted" && r.createdBy !== user.staffId);
+        const pendingApproval = results.filter((r) => r.status === "Submitted" && (r.createdBy !== user.staffId || user.role === "admin"));
         return (
           <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #fde68a", marginBottom:20, overflow:"hidden" }}>
             <div style={{ padding:"14px 18px", background:"#fffbeb", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: pendingApproval.length ? "1px solid #fef3c7" : "none" }}>
@@ -538,7 +538,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
                     <button onClick={()=>handleSubmitDraft(r)} style={{ padding:"3px 10px", background:"#dbeafe", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e40af", fontWeight:600 }}>Submit</button>
                   )}
                   {PERMISSIONS[user.role].approve && r.status === "Submitted" && (
-                    r.createdBy === user.staffId
+                    r.createdBy === user.staffId && user.role !== "admin"
                       ? <span style={{ fontSize:11, color:"#9ca3af" }}>Awaiting reviewer</span>
                       : <button onClick={()=>setApproveModal(r)} style={{ padding:"3px 10px", background:"#dcfce7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#166534", fontWeight:600 }}>Approve</button>
                   )}

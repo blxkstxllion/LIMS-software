@@ -195,7 +195,9 @@ public class ResultsController : ControllerBase
                 {
                     return StatusCode(403, new { message = "You do not have permission to update this result." });
                 }
-                if (result.CreatedById == userId)
+                // Admin is exempt from the self-approval block below — every other
+                // approve-capable role still can't review their own submission.
+                if (result.CreatedById == userId && role != "admin")
                 {
                     return StatusCode(403, new { message = "You cannot approve or reject a result you submitted yourself." });
                 }
