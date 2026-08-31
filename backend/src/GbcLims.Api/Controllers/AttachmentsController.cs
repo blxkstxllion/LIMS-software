@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using GbcLims.Api.Services;
 using GbcLims.Domain.Entities;
 using GbcLims.Infrastructure.Persistence;
@@ -122,7 +123,9 @@ public class AttachmentsController : ControllerBase
 
             _context.Attachments.Add(attachment);
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Create", "Attachment", nameof(Attachment), attachment.Id.ToString(), $"File {attachment.FileName} uploaded", null, User.Identity?.Name, sampleId);
+            var uploaderId = Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var parsedUploaderId) ? parsedUploaderId : (Guid?)null;
+            var uploadDetails = $"File {attachment.FileName} uploaded" + (sample is not null ? $" to Sample {sample.SampleNumber}" : "");
+            await _auditLogService.LogAsync("Create", "Attachment", nameof(Attachment), attachment.Id.ToString(), uploadDetails, uploaderId, User.Identity?.Name, sampleId);
             return CreatedAtAction(nameof(Get), new AttachmentDto(attachment));
         }
         catch (Exception ex)

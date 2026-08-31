@@ -62,8 +62,8 @@ export function SampleProvider({ children }) {
     return created;
   }, []);
 
-  const onSampleStatusChanged = useCallback(async (sampleId, status) => {
-    const updated = await updateSampleStatus(sampleId, status);
+  const onSampleStatusChanged = useCallback(async (sampleId, status, comment) => {
+    const updated = await updateSampleStatus(sampleId, status, comment);
     setSamples((prev) => prev.map((sample) => (sample.id === sampleId ? { ...sample, status: updated.status } : sample)));
     return updated;
   }, []);

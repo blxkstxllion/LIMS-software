@@ -72,6 +72,20 @@ public class NotificationsController : ControllerBase
                 }
             }
 
+            // File uploads are broadcast to everyone rather than matched to an owner —
+            // unlike samples/results, there's no single "owner" a new attachment belongs
+            // to, so every other user is told a file landed instead of just whoever
+            // registered the sample it's attached to.
+            var uploadLogs = await _context.AuditLogs
+                .Where(l => l.Module == "Attachment" && l.Action == "Create" && l.UserId != userId && l.CreatedAt >= since)
+                .OrderByDescending(l => l.CreatedAt)
+                .Take(30)
+                .ToListAsync();
+            foreach (var log in uploadLogs)
+            {
+                notifications.Add(new NotificationDto { Id = log.Id, Message = log.Details, ActorName = log.UserName, CreatedAt = log.CreatedAt });
+            }
+
             return Ok(notifications.OrderByDescending(n => n.CreatedAt).Take(30));
         }
         catch (Exception ex)

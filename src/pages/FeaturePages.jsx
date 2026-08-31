@@ -295,7 +295,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
             <Input label="Location" value={editData.location} onChange={(v)=>setEditData((p)=>({...p,location:v}))} />
             <Input label="Quantity" value={editData.quantity} onChange={(v)=>setEditData((p)=>({...p,quantity:v}))} type="number" />
             <Select label="Priority" value={editData.priority} onChange={(v)=>setEditData((p)=>({...p,priority:v}))} options={["Low","Medium","High","Urgent"]} />
-            <Select label="Status" value={editData.status} onChange={(v)=>setEditData((p)=>({...p,status:v}))} options={["Pending Registration","Pending Verification","Pending Analysis","In Progress","Completed","Approved","Rejected"]} />
+            <Select label="Status" value={editData.status} onChange={(v)=>setEditData((p)=>({...p,status:v}))} options={["Pending Registration","Pending Verification","Needs Correction","Pending Analysis","In Progress","Completed","Approved","Rejected"]} />
             <Input label="Assigned To" value={editData.assignedTo} onChange={(v)=>setEditData((p)=>({...p,assignedTo:v}))} />
             <Input label="Batch Number" value={editData.batchNumber} onChange={(v)=>setEditData((p)=>({...p,batchNumber:v}))} />
           </div>
@@ -324,9 +324,9 @@ export function SampleVerification({ user, samples, setSamples, showToast, onSam
 
   const handleDecision = async (decision) => {
     if (!selected) return;
-    const newStatus = decision === "approve" ? "Pending Analysis" : decision === "reject" ? "Rejected" : "Pending Verification";
+    const newStatus = decision === "approve" ? "Pending Analysis" : decision === "reject" ? "Rejected" : "Needs Correction";
     try {
-      await onSampleStatusChanged(selected.id, newStatus);
+      await onSampleStatusChanged(selected.id, newStatus, comment);
       setSamples((prev) => prev.map((s) => s.id === selected.id ? {...s, status:newStatus, verificationComment:comment, verifiedBy:user.staffId, verifiedAt:new Date().toISOString()} : s));
       showToast(`Sample ${selected.id} ${decision === "approve" ? "approved for analysis" : decision === "reject" ? "rejected" : "returned for correction"}.`, decision === "approve" ? "success" : "warning");
       setSelected(null); setChecklist({}); setComment("");
@@ -400,9 +400,13 @@ export function SampleVerification({ user, samples, setSamples, showToast, onSam
 export function ResultsEntry({ user, samples, results, setResults, showToast, onResultAdded, onResultStatusChanged }) {
   const [form, setForm] = useState({ sampleId:"", analysisDate:new Date().toISOString().split("T")[0], analystName:user.name, moisture:"", method:"Spectroscopy", equipment:"", al2o3:"", sio2:"", fe2o3:"", tio2:"", loi:"", cao:"", mgo:"", na2o:"", k2o:"", p2o5:"", mno:"", cr2o3:"", minorOxides:"", calibrated:false, stdDev:"", repeatability:"", notes:"" });
   const canCreate = Boolean(PERMISSIONS[user.role]?.create);
+  const canApprove = Boolean(PERMISSIONS[user.role]?.approve);
   // Roles that can't submit results (e.g. qa_engineer) land on the results list
-  // instead of a create form the backend won't let them use.
-  const [viewList, setViewList] = useState(!canCreate);
+  // instead of a create form the backend won't let them use. Roles that CAN approve
+  // land there too, even if they can also create — reviewing what's waiting on them
+  // is the more urgent default than a blank entry form, and the pending-approval
+  // section below is otherwise invisible until they navigate to it manually.
+  const [viewList, setViewList] = useState(!canCreate || canApprove);
   const [approveModal, setApproveModal] = useState(null);
   const [approveComment, setApproveComment] = useState("");
 
@@ -491,6 +495,28 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         <h1 style={{ fontSize:22, fontWeight:800, color:"#111827", margin:0 }}>Analysis Results</h1>
         {canCreate && <Button onClick={()=>setViewList(false)} variant="primary">+ New Result</Button>}
       </div>
+      {canApprove && (() => {
+        const pendingApproval = results.filter((r) => r.status === "Submitted" && r.createdBy !== user.staffId);
+        return (
+          <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #fde68a", marginBottom:20, overflow:"hidden" }}>
+            <div style={{ padding:"14px 18px", background:"#fffbeb", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: pendingApproval.length ? "1px solid #fef3c7" : "none" }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"#92400e" }}>⏳ Pending Your Approval</div>
+              <Badge text={String(pendingApproval.length)} color="#92400e" bg="#fef3c7" small />
+            </div>
+            {pendingApproval.length === 0 ? (
+              <div style={{ padding:"16px 18px", fontSize:13, color:"#9ca3af" }}>Nothing awaiting your review right now.</div>
+            ) : pendingApproval.map((r, i) => (
+              <div key={r.id} style={{ padding:"12px 18px", borderBottom: i < pendingApproval.length - 1 ? "1px solid #f3f4f6" : "none", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                <div>
+                  <div style={{ fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", fontSize:13 }}>{r.id} <span style={{ color:"#9ca3af", fontWeight:400 }}>· Sample {r.sampleId}</span></div>
+                  <div style={{ fontSize:12, color:"#6b7280" }}>Submitted by {r.createdBy || r.analystName} · Al₂O₃ {r.al2o3}% · SiO₂ {r.sio2}%</div>
+                </div>
+                <Button onClick={()=>setApproveModal(r)} variant="success" small>Review</Button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
         <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>

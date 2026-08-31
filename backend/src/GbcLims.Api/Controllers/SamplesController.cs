@@ -226,7 +226,8 @@ public class SamplesController : ControllerBase
             var allowedTransitions = new Dictionary<SampleStatus, List<SampleStatus>>
             {
                 [SampleStatus.PendingRegistration] = new() { SampleStatus.PendingVerification },
-                [SampleStatus.PendingVerification] = new() { SampleStatus.PendingAnalysis, SampleStatus.Rejected },
+                [SampleStatus.PendingVerification] = new() { SampleStatus.PendingAnalysis, SampleStatus.Rejected, SampleStatus.NeedsCorrection },
+                [SampleStatus.NeedsCorrection] = new() { SampleStatus.PendingVerification },
                 [SampleStatus.PendingAnalysis] = new() { SampleStatus.InProgress, SampleStatus.Rejected },
                 [SampleStatus.InProgress] = new() { SampleStatus.Completed, SampleStatus.Rejected },
                 [SampleStatus.Completed] = new() { SampleStatus.Approved, SampleStatus.Rejected },
@@ -239,7 +240,9 @@ public class SamplesController : ControllerBase
             sample.Status = nextStatus;
             sample.UpdatedAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Update", "Sample", nameof(Sample), sample.Id.ToString(), $"Sample status changed to {nextStatus}", Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, sample.Id);
+            var statusMessage = $"Sample status changed to {FormatSampleStatus(nextStatus)}";
+            if (!string.IsNullOrWhiteSpace(request.Comment)) statusMessage += $": {request.Comment}";
+            await _auditLogService.LogAsync("Update", "Sample", nameof(Sample), sample.Id.ToString(), statusMessage, userId, User.Identity?.Name, sample.Id);
             return Ok(new SampleDto(sample));
         }
         catch (Exception ex)
@@ -289,7 +292,7 @@ public class SamplesController : ControllerBase
 
     public record CreateSampleRequest(string SampleNumber, string Origin, string SampleSource, string Location, decimal Quantity, string Unit, decimal Tonnage, string Priority, string SubmittedBy, string ReceivedBy, string BatchNumber, string Notes);
     public record UpdateSampleRequest(string Location, decimal Quantity, string Priority, string? AssignedTo, string BatchNumber, string Notes);
-    public record UpdateSampleStatusRequest(string Status);
+    public record UpdateSampleStatusRequest(string Status, string? Comment = null);
 
     public class SampleDto
     {

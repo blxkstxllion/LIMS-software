@@ -37,8 +37,8 @@ export async function fetchSamplesPaged({ search, status, priority, page = 1, pa
   const response = await request(`/api/samples?${params.toString()}`);
   return {
     items: (response.items || []).map((sample) => ({
-      id: sample.sampleNumber,
       ...sample,
+      id: sample.sampleNumber,
       status: sample.status,
       dateReceived: sample.dateReceived?.split("T")[0],
     })),
@@ -57,8 +57,8 @@ export async function fetchLimsData() {
 
   return {
     samples: (samples?.items || []).map((sample) => ({
-      id: sample.sampleNumber,
       ...sample,
+      id: sample.sampleNumber,
       status: sample.status,
       dateReceived: sample.dateReceived?.split("T")[0],
     })),
@@ -120,10 +120,10 @@ export async function createCoa(payload) {
   return normalizeCoa(response);
 }
 
-export async function updateSampleStatus(sampleId, status) {
+export async function updateSampleStatus(sampleId, status, comment) {
   return request(`/api/samples/${sampleId}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, comment }),
   });
 }
 
