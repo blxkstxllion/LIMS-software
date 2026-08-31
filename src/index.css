@@ -210,4 +210,207 @@ code {
   .lims-login-hero-extra {
     display: none !important;
   }
+  /* Ambient decoration costs more than it's worth once the form is the only thing
+     that matters on a small screen — the login page's job is letting someone in,
+     not showing off. */
+  .lims-bg-particle,
+  .lims-bg-lines,
+  .lims-light-sweep {
+    display: none !important;
+  }
+}
+
+/* --- Login page ambient background: precision/security mood, not a marketing site.
+   Slow (8-14s), low-opacity, never draws the eye away from the form. Every animation
+   in this section is disabled outright under reduced-motion below. --- */
+
+.lims-bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(147, 197, 253, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(147, 197, 253, 0.06) 1px, transparent 1px);
+  background-size: 42px 42px;
+  animation: lims-grid-pan 26s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes lims-grid-pan {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 42px 42px, 42px 42px; }
+}
+
+.lims-bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.lims-bg-glow-1 {
+  width: 380px;
+  height: 380px;
+  top: -80px;
+  left: -100px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.55), transparent 70%);
+  animation: lims-glow-drift-1 13s ease-in-out infinite;
+}
+
+.lims-bg-glow-2 {
+  width: 320px;
+  height: 320px;
+  bottom: -60px;
+  right: -80px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.4), transparent 70%);
+  animation: lims-glow-drift-2 16s ease-in-out infinite;
+}
+
+@keyframes lims-glow-drift-1 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(30px, 40px); }
+}
+@keyframes lims-glow-drift-2 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-25px, -30px); }
+}
+
+.lims-bg-particle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(191, 219, 254, 0.55);
+  pointer-events: none;
+  animation-name: lims-particle-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes lims-particle-drift {
+  0%, 100% { transform: translate(0, 0); opacity: 0.25; }
+  50% { transform: translate(var(--lims-particle-x, 14px), var(--lims-particle-y, -18px)); opacity: 0.7; }
+}
+
+.lims-bg-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  animation: lims-lines-pulse 9s ease-in-out infinite;
+}
+
+@keyframes lims-lines-pulse {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.26; }
+}
+
+.lims-light-sweep {
+  position: absolute;
+  top: -20%;
+  left: -60%;
+  width: 60%;
+  height: 140%;
+  background: linear-gradient(115deg, transparent 20%, rgba(191, 219, 254, 0.16) 45%, transparent 70%);
+  pointer-events: none;
+  animation: lims-sweep 8s ease-in-out infinite;
+}
+
+@keyframes lims-sweep {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(260%); }
+}
+
+.lims-stagger-item {
+  opacity: 0;
+  animation: lims-fade-up 0.6s ease-out forwards;
+}
+
+@keyframes lims-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lims-login-card {
+  animation: lims-card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes lims-card-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.lims-input-wrap input {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.lims-input-wrap input:focus {
+  outline: none;
+  border-color: #1e3a8a !important;
+  box-shadow: 0 0 0 4px rgba(30, 58, 138, 0.1);
+}
+
+.lims-eye-btn svg {
+  transition: transform 0.2s ease;
+}
+.lims-eye-btn:active svg {
+  transform: scale(0.85);
+}
+
+.lims-signin-btn {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.lims-signin-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(30, 58, 138, 0.35);
+}
+.lims-signin-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.lims-signin-btn .lims-signin-arrow {
+  transition: transform 0.25s ease;
+}
+.lims-signin-btn:hover:not(:disabled) .lims-signin-arrow {
+  transform: translateX(4px);
+}
+
+.lims-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: lims-spin 0.7s linear infinite;
+}
+@keyframes lims-spin {
+  to { transform: rotate(360deg); }
+}
+
+.lims-error-box {
+  animation: lims-error-in 0.3s ease-out both;
+}
+@keyframes lims-error-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lims-photo-frame {
+  transition: transform 0.4s ease-out, box-shadow 0.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lims-bg-grid,
+  .lims-bg-glow-1,
+  .lims-bg-glow-2,
+  .lims-bg-particle,
+  .lims-bg-lines,
+  .lims-light-sweep,
+  .lims-stagger-item,
+  .lims-login-card {
+    animation: none !important;
+  }
+  .lims-stagger-item {
+    opacity: 1;
+    transform: none;
+  }
+  .lims-photo-frame {
+    transition: none;
+  }
 }

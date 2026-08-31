@@ -68,7 +68,7 @@ export const Textarea = ({ label, value, onChange, rows = 3, placeholder }) => (
   </div>
 );
 
-export const Button = ({ children, onClick, variant = "primary", small, type = "button", disabled }) => {
+export const Button = ({ children, onClick, variant = "primary", small, type = "button", disabled, className, style }) => {
   const styles = {
     primary: { background: "#1e3a8a", color: "#fff", border: "none" },
     secondary: { background: "#f3f4f6", color: "#374151", border: "1.5px solid #d1d5db" },
@@ -78,7 +78,7 @@ export const Button = ({ children, onClick, variant = "primary", small, type = "
     ghost: { background: "transparent", color: "#1e3a8a", border: "1.5px solid #1e3a8a" },
   };
   return (
-    <button type={type} onClick={onClick} disabled={disabled} style={{ ...styles[variant], padding: small ? "5px 12px" : "9px 18px", borderRadius: 6, fontSize: small ? 12 : 14, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+    <button type={type} onClick={onClick} disabled={disabled} className={className} style={{ ...styles[variant], padding: small ? "5px 12px" : "9px 18px", borderRadius: 6, fontSize: small ? 12 : 14, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", ...style }}>
       {children}
     </button>
   );
