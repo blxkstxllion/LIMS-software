@@ -1,6 +1,11 @@
-{$DOMAIN} {
+# Plain :8080, not a domain name — this Caddy instance is internal-only (no host port
+# published, see docker-compose.yml), reached through the shared Caddy instance that
+# already owns ports 80/443 and TLS for every app on the host. A domain name here would
+# make Caddy attempt its own ACME/HTTPS handshake for a port nothing external can reach,
+# which would just fail repeatedly for no reason.
+:8080 {
 	handle /api/* {
-		reverse_proxy backend:8080
+		reverse_proxy api:8080
 	}
 
 	handle {
