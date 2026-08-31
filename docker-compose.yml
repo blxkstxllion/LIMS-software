@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # No `ports:` mapping — Postgres is only reachable from other containers on this
+    # network, not from the internet. Use `docker compose exec postgres psql ...` on
+    # the server itself for any manual access.
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      EnableHttpsRedirection: "false"
+      Jwt__Secret: ${JWT_SECRET}
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Cors__AllowedOrigins__0: "https://${DOMAIN}"
+      Bootstrap__AdminPassword: ${BOOTSTRAP_ADMIN_PASSWORD}
+    volumes:
+      # File Management uploads live on local disk by default (see AttachmentsController) —
+      # a named volume here means they survive container restarts/redeploys, unlike the
+      # Render free-tier deployment where this wasn't possible without a paid disk.
+      - attachments_data:/app/App_Data/attachments
+
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+  attachments_data:

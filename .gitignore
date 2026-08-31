@@ -33,3 +33,6 @@ backend/src/GbcLims.Api/App_Data/
 
 # Claude Code local settings (machine/session-specific, not shared config)
 .claude/settings.local.json
+
+# Real secrets for the Hetzner Docker Compose deployment — .env.example is the template
+.env

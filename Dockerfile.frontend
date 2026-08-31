@@ -1,0 +1,19 @@
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.js ./
+COPY public/ public/
+COPY src/ src/
+
+# Empty on purpose — frontend and backend share one domain behind Caddy here, so API
+# calls are same-origin ("/api/...") with no base URL prefix needed, and no CORS
+# configuration required either. See authService.js for the corresponding fix that
+# makes an explicitly-empty value behave differently from an unset one.
+ARG VITE_API_BASE_URL=""
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+RUN npm run build
+
+FROM caddy:2-alpine
+COPY --from=build /app/dist /usr/share/caddy
+COPY Caddyfile /etc/caddy/Caddyfile

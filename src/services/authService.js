@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5152";
+// An explicitly empty VITE_API_BASE_URL means "same origin, no prefix" (the frontend
+// and backend served from one domain, e.g. behind a single reverse proxy) — `||` would
+// treat that empty string as unset and wrongly fall back to localhost, so this checks
+// for undefined specifically instead.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL !== undefined ? import.meta.env.VITE_API_BASE_URL : "http://localhost:5152";
 
 let refreshPromise = null;
 
