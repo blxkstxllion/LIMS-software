@@ -7,6 +7,13 @@ public class Result
     public Guid Id { get; set; }
     public Guid SampleId { get; set; }
     public Sample Sample { get; set; } = null!;
+    // Comma-separated SampleNumbers of any OTHER registered samples this one analysis
+    // also represents — e.g. two or more samples coning-and-quartered down into a
+    // single physical unit before it reached the lab. SampleId/Sample above stays the
+    // "primary" sample and keeps working unchanged everywhere that already assumes one
+    // sample per result (filtering, notifications, COA generation); this is additive,
+    // read only for display and report tonnage/origin roll-ups.
+    public string? AdditionalSampleNumbers { get; set; }
     public string AnalysisNumber { get; set; } = string.Empty;
     public DateTimeOffset AnalysisDate { get; set; }
     public string AnalystName { get; set; } = string.Empty;

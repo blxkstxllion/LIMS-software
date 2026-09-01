@@ -398,7 +398,7 @@ export function SampleVerification({ user, samples, setSamples, showToast, onSam
 }
 
 export function ResultsEntry({ user, samples, results, setResults, showToast, onResultAdded, onResultStatusChanged }) {
-  const [form, setForm] = useState({ sampleId:"", analysisDate:new Date().toISOString().split("T")[0], analystName:user.name, moisture:"", method:"Spectroscopy", equipment:"", al2o3:"", sio2:"", fe2o3:"", tio2:"", loi:"", cao:"", mgo:"", na2o:"", k2o:"", p2o5:"", mno:"", cr2o3:"", minorOxides:"", calibrated:false, stdDev:"", repeatability:"", notes:"" });
+  const [form, setForm] = useState({ sampleIds:[], compositeMode:false, analysisDate:new Date().toISOString().split("T")[0], analystName:user.name, moisture:"", method:"Spectroscopy", equipment:"", al2o3:"", sio2:"", fe2o3:"", tio2:"", loi:"", cao:"", mgo:"", na2o:"", k2o:"", p2o5:"", mno:"", cr2o3:"", minorOxides:"", calibrated:false, stdDev:"", repeatability:"", notes:"" });
   const canCreate = Boolean(PERMISSIONS[user.role]?.create);
   const canApprove = Boolean(PERMISSIONS[user.role]?.approve);
   // Roles that can't submit results (e.g. qa_engineer) land on the results list
@@ -411,6 +411,8 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
   const [approveComment, setApproveComment] = useState("");
 
   const set = (k,v) => setForm((p)=>({...p,[k]:v}));
+  const toggleSampleId = (id) => setForm((p) => ({ ...p, sampleIds: p.sampleIds.includes(id) ? p.sampleIds.filter((x) => x !== id) : [...p.sampleIds, id] }));
+  const sampleListLabel = (r) => (r.sampleNumbers?.length > 1 ? r.sampleNumbers.join(", ") : r.sampleId);
   const totalOxides = useMemo(() => {
     const fields = ["al2o3","sio2","fe2o3","tio2","loi","cao","mgo","na2o","k2o","p2o5","mno","cr2o3"];
     return fields.reduce((sum,f) => sum + (parseFloat(form[f])||0), 0) + (parseFloat(form.minorOxides)||0);
@@ -428,10 +430,11 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
   const availableSamples = samples.filter((s) => ["Pending Analysis","In Progress"].includes(s.status));
 
   const handleSubmit = async (status) => {
-    if (!form.sampleId || !form.al2o3 || !form.sio2 || !form.fe2o3 || !form.tio2 || !form.loi) { showToast("Please fill all required fields.", "error"); return; }
+    if (!form.sampleIds.length || !form.al2o3 || !form.sio2 || !form.fe2o3 || !form.tio2 || !form.loi) { showToast(form.sampleIds.length ? "Please fill all required fields." : "Select at least one sample.", "error"); return; }
     try {
       const payload = {
-        sampleId: form.sampleId,
+        sampleId: form.sampleIds[0],
+        additionalSampleIds: form.compositeMode && form.sampleIds.length > 1 ? form.sampleIds : undefined,
         analysisNumber: `RES-${String(Date.now()).slice(-6)}`,
         analysisDate: form.analysisDate,
         analystName: form.analystName,
@@ -462,7 +465,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
       const result = await onResultAdded(payload);
       setResults((prev) => [result, ...prev]);
       showToast(`Result ${status === "Draft" ? "saved as draft" : "submitted for approval"}.`, "success");
-      setForm((p)=>({...p, sampleId:"", analysisDate:new Date().toISOString().split("T")[0], analystName:user.name, al2o3:"", sio2:"", fe2o3:"", tio2:"", loi:"", cao:"", mgo:"", na2o:"", k2o:"", p2o5:"", mno:"", cr2o3:"", minorOxides:"", calibrated:false, stdDev:"", repeatability:"", notes:""}));
+      setForm((p)=>({...p, sampleIds:[], compositeMode:false, analysisDate:new Date().toISOString().split("T")[0], analystName:user.name, al2o3:"", sio2:"", fe2o3:"", tio2:"", loi:"", cao:"", mgo:"", na2o:"", k2o:"", p2o5:"", mno:"", cr2o3:"", minorOxides:"", calibrated:false, stdDev:"", repeatability:"", notes:""}));
     } catch (error) {
       showToast(error.message || "Unable to submit result.", "error");
     }
@@ -508,7 +511,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
             ) : pendingApproval.map((r, i) => (
               <div key={r.id} style={{ padding:"12px 18px", borderBottom: i < pendingApproval.length - 1 ? "1px solid #f3f4f6" : "none", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
                 <div>
-                  <div style={{ fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", fontSize:13 }}>{r.id} <span style={{ color:"#9ca3af", fontWeight:400 }}>· Sample {r.sampleId}</span></div>
+                  <div style={{ fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", fontSize:13 }}>{r.id} <span style={{ color:"#9ca3af", fontWeight:400 }}>· Sample{r.sampleNumbers?.length > 1 ? "s" : ""} {sampleListLabel(r)}</span></div>
                   <div style={{ fontSize:12, color:"#6b7280" }}>Submitted by {r.createdBy || r.analystName} · Al₂O₃ {r.al2o3}% · SiO₂ {r.sio2}%</div>
                 </div>
                 <Button onClick={()=>setApproveModal(r)} variant="success" small>Review</Button>
@@ -525,7 +528,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
             {results.map((r,i)=>(
               <tr key={r.id} style={{ borderBottom:"1px solid #f3f4f6", background: i%2===0?"#fff":"#fafafa" }}>
                 <td style={{ padding:"10px 12px", fontFamily:"monospace", fontWeight:600, color:"#1e3a8a", fontSize:12 }}>{r.id}</td>
-                <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12 }}>{r.sampleId}</td>
+                <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12 }} title={r.sampleNumbers?.length > 1 ? sampleListLabel(r) : undefined}>{r.sampleNumbers?.length > 1 ? `${r.sampleId} +${r.sampleNumbers.length - 1} more` : r.sampleId}</td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{formatDate(r.analysisDate)}</td>
                 <td style={{ padding:"10px 12px", color:"#374151" }}>{r.moisture?`${r.moisture}%`:"—"}</td>
                 <td style={{ padding:"10px 12px", color:"#374151" }}>{r.method}</td>
@@ -553,7 +556,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         <Modal title={`Approve Result: ${approveModal.id}`} onClose={()=>setApproveModal(null)}>
           <div style={{ background:"#f9fafb", borderRadius:8, padding:14, marginBottom:16 }}>
             <div className="lims-grid-2" style={{ gap:8, fontSize:13 }}>
-              {[['Sample',approveModal.sampleId],['Method',approveModal.method],['Al₂O₃',`${approveModal.al2o3}%`],['SiO₂',`${approveModal.sio2}%`],['Fe₂O₃',`${approveModal.fe2o3}%`],['Total',`${approveModal.totalOxides}%`]].map(([k,v])=>(<div key={k}><span style={{ color:"#9ca3af", fontSize:11 }}>{k}: </span><strong>{v}</strong></div>))}
+              {[['Sample(s)',sampleListLabel(approveModal)],['Method',approveModal.method],['Al₂O₃',`${approveModal.al2o3}%`],['SiO₂',`${approveModal.sio2}%`],['Fe₂O₃',`${approveModal.fe2o3}%`],['Total',`${approveModal.totalOxides}%`]].map(([k,v])=>(<div key={k}><span style={{ color:"#9ca3af", fontSize:11 }}>{k}: </span><strong>{v}</strong></div>))}
             </div>
           </div>
           <Textarea label="Approval Comments" value={approveComment} onChange={setApproveComment} placeholder="Comments (optional)" rows={2} />
@@ -577,8 +580,35 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         <Button onClick={()=>setViewList(true)} variant="ghost">📋 View All Results</Button>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:28 }}>
+        <div style={{ marginBottom:16 }}>
+          <label style={{ display:"block", fontWeight:600, fontSize:13, color:"#374151", marginBottom:8 }}>Sample(s) <span style={{color:"#ef4444"}}>*</span></label>
+          <div style={{ display:"flex", gap:14, marginBottom:10 }}>
+            {[["One sample",false],["Multiple samples (composite)",true]].map(([label,val])=>(
+              <label key={label} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 14px", borderRadius:8, border:`2px solid ${form.compositeMode===val?"#1e3a8a":"#e5e7eb"}`, background: form.compositeMode===val?"#eff6ff":"#fff", cursor:"pointer", fontSize:13, fontWeight: form.compositeMode===val?700:400 }}>
+                <input type="radio" checked={form.compositeMode===val} onChange={()=>setForm((p)=>({...p, compositeMode:val, sampleIds:[]}))} style={{display:"none"}} />{label}
+              </label>
+            ))}
+          </div>
+          {form.compositeMode ? (
+            <div style={{ border:"1.5px solid #e5e7eb", borderRadius:8, maxHeight:200, overflowY:"auto" }}>
+              {availableSamples.length === 0 ? (
+                <div style={{ padding:12, fontSize:13, color:"#9ca3af" }}>No samples available.</div>
+              ) : availableSamples.map((s)=>(
+                <label key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderBottom:"1px solid #f3f4f6", cursor:"pointer", fontSize:13 }}>
+                  <input type="checkbox" checked={form.sampleIds.includes(s.id)} onChange={()=>toggleSampleId(s.id)} style={{ accentColor:"#1e3a8a", width:15, height:15, flexShrink:0 }} />
+                  <span style={{ fontFamily:"monospace", fontWeight:700, color:"#1e3a8a" }}>{s.id}</span>
+                  <span style={{ color:"#6b7280" }}>{s.origin}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <Select value={form.sampleIds[0]||""} onChange={(v)=>set("sampleIds",v?[v]:[])} options={availableSamples.map((s)=>({value:s.id,label:`${s.id} — ${s.origin}`}))} required />
+          )}
+          {form.compositeMode && (
+            <div style={{ marginTop:6, fontSize:12, color:"#6b7280" }}>{form.sampleIds.length ? `${form.sampleIds.length} sample${form.sampleIds.length===1?"":"s"} selected — recorded as one composite analysis covering all of them.` : "Select every sample that was quartered into this one analysis."}</div>
+          )}
+        </div>
         <div className="lims-grid-2" style={{ gap:"0 24px" }}>
-          <Select label="Sample" value={form.sampleId} onChange={(v)=>set("sampleId",v)} options={availableSamples.map((s)=>({value:s.id,label:`${s.id} — ${s.origin}`}))} required />
           <Input label="Analysis Date" value={form.analysisDate} onChange={(v)=>set("analysisDate",v)} type="date" required />
           <Input label="Analyst Name" value={form.analystName} onChange={(v)=>set("analystName",v)} required />
         </div>
@@ -1135,7 +1165,11 @@ export function Reports({ samples, results, coas }) {
   };
 
   const buildReportHtml = () => {
-    const periodLabel = getReportPeriodLabel(); const sampleMap = Object.fromEntries(filteredSamples.map((s) => [s.id, s])); const rows = filteredResults.map((r) => { const s = sampleMap[r.sampleId] || {}; return { date: r.analysisDate, week: Math.ceil((new Date(r.analysisDate) - new Date(new Date(r.analysisDate).getFullYear(), 0, 1)) / (7*864e5)), reportNo: `RPT-${reportFrequency.toUpperCase()}-${new Date().toISOString().slice(0,10)}`, origin: s.origin || "N/A", tonnage: s.tonnage || 0, moisture: r.moisture || "", al2o3: parseFloat(r.al2o3) || 0, sio2: parseFloat(r.sio2) || 0, fe2o3: parseFloat(r.fe2o3) || 0, tio2: parseFloat(r.tio2) || 0, loi: parseFloat(r.loi) || 0 }; });
+    // A result can represent more than one registered sample (several samples
+    // coning-and-quartered down into one physical unit before analysis) — its origin
+    // and tonnage then have to roll up across every sample it covers, not just the
+    // primary one, or the weighted averages below would understate real tonnage.
+    const periodLabel = getReportPeriodLabel(); const sampleMap = Object.fromEntries(filteredSamples.map((s) => [s.id, s])); const rows = filteredResults.map((r) => { const sampleIds = r.sampleNumbers?.length ? r.sampleNumbers : [r.sampleId]; const matchedSamples = sampleIds.map((id) => sampleMap[id]).filter(Boolean); const origins = [...new Set(matchedSamples.map((s) => s.origin).filter(Boolean))]; return { date: r.analysisDate, week: Math.ceil((new Date(r.analysisDate) - new Date(new Date(r.analysisDate).getFullYear(), 0, 1)) / (7*864e5)), reportNo: `RPT-${reportFrequency.toUpperCase()}-${new Date().toISOString().slice(0,10)}`, sampleLabel: sampleIds.join(", "), origin: origins.length ? origins.join(", ") : "N/A", tonnage: matchedSamples.reduce((sum, s) => sum + (parseFloat(s.tonnage) || 0), 0), moisture: r.moisture || "", al2o3: parseFloat(r.al2o3) || 0, sio2: parseFloat(r.sio2) || 0, fe2o3: parseFloat(r.fe2o3) || 0, tio2: parseFloat(r.tio2) || 0, loi: parseFloat(r.loi) || 0 }; });
     const totalTonnage = rows.reduce((sum, row) => sum + (parseFloat(row.tonnage) || 0), 0);
     const avgMoisture = rows.length ? (rows.reduce((sum, row) => sum + (parseFloat(row.moisture) || 0), 0) / rows.length).toFixed(2) : "0.00";
     const constituents = ["al2o3", "sio2", "fe2o3", "tio2", "loi"];
@@ -1146,8 +1180,8 @@ export function Reports({ samples, results, coas }) {
     let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title><style>body{margin:0;padding:0;background:#eff6ff;font-family:'Segoe UI',system-ui,sans-serif;color:#0f172a;} .page{max-width:1120px;margin:0 auto;padding:28px;position:relative;} .header{padding:28px 32px;border-radius:18px 18px 0 0;background:#1e3a8a;color:#fff;position:relative;overflow:hidden;} .header h1{margin:0;font-size:32px;font-weight:800;letter-spacing:.02em;} .header p{margin:10px 0 0;font-size:15px;color:#e0e7ff;line-height:1.6;max-width:780px;} .meta{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;} .meta-card{background:#fff;color:#0f172a;border:1px solid #c7d2fe;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(15,23,42,.08);} .meta-card span{display:block;font-size:26px;font-weight:800;margin-bottom:6px;} .meta-card small{color:#475569;font-size:13px;} table{width:100%;border-collapse:collapse;margin-top:30px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 18px 46px rgba(15,23,42,.08);} th,td{padding:14px 16px;text-align:left;} th{background:#1e40af;color:#fff;font-weight:700;font-size:13px;letter-spacing:.01em;} td{color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0;} tr:nth-child(even){background:#eff6ff;} .section{margin-top:34px;} .section-title{font-size:18px;font-weight:700;color:#102a43;margin-bottom:16px;} .summary-text{font-size:14px;color:#334155;line-height:1.7;} .watermark{position:absolute;right:32px;top:32px;opacity:.08;width:160px;height:auto;}</style></head><body><div class="page">${logo}<div class="header"><h1>${safeTitle}</h1><p>${escapeHtml(periodLabel)} • Real-time figures updated from current sample and analysis data.</p></div>`;
     html += `<div class="meta"><div class="meta-card"><span>${reportSummary.totalSamples}</span><small>Samples in period</small></div><div class="meta-card"><span>${reportSummary.totalResults}</span><small>Results generated</small></div><div class="meta-card"><span>${reportSummary.approvedResults}</span><small>Approved results</small></div><div class="meta-card"><span>${reportSummary.issuedCOAs}</span><small>COAs issued</small></div></div>`;
     html += `<div class="section"><div class="section-title">Period Summary</div><div class="summary-text">This ${escapeHtml(reportFrequency)} report covers ${periodRange.start.toLocaleDateString('en-GB')} to ${periodRange.end.toLocaleDateString('en-GB')} and includes ${filteredSamples.length} registered samples, ${filteredResults.length} analysed results, total extracted tonnage of ${totalTonnage.toFixed(2)} t, and average moisture of ${avgMoisture}%.</div></div>`;
-    html += `<div class="section"><div class="section-title">Detailed Results (${rows.length})</div><table><thead><tr><th>Date</th><th>Week</th><th>Report</th><th>Origin</th><th>Tonnage</th><th>Moisture</th><th>Al₂O₃</th><th>SiO₂</th><th>Fe₂O₃</th><th>TiO₂</th><th>LOI</th></tr></thead><tbody>`;
-    rows.forEach((r) => { html += `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.week)}</td><td>${escapeHtml(r.reportNo)}</td><td>${escapeHtml(r.origin)}</td><td>${escapeHtml(r.tonnage)}</td><td>${escapeHtml(r.moisture)}</td><td>${escapeHtml(r.al2o3)}</td><td>${escapeHtml(r.sio2)}</td><td>${escapeHtml(r.fe2o3)}</td><td>${escapeHtml(r.tio2)}</td><td>${escapeHtml(r.loi)}</td></tr>`; });
+    html += `<div class="section"><div class="section-title">Detailed Results (${rows.length})</div><table><thead><tr><th>Date</th><th>Week</th><th>Report</th><th>Sample(s)</th><th>Origin</th><th>Tonnage</th><th>Moisture</th><th>Al₂O₃</th><th>SiO₂</th><th>Fe₂O₃</th><th>TiO₂</th><th>LOI</th></tr></thead><tbody>`;
+    rows.forEach((r) => { html += `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.week)}</td><td>${escapeHtml(r.reportNo)}</td><td>${escapeHtml(r.sampleLabel)}</td><td>${escapeHtml(r.origin)}</td><td>${escapeHtml(r.tonnage)}</td><td>${escapeHtml(r.moisture)}</td><td>${escapeHtml(r.al2o3)}</td><td>${escapeHtml(r.sio2)}</td><td>${escapeHtml(r.fe2o3)}</td><td>${escapeHtml(r.tio2)}</td><td>${escapeHtml(r.loi)}</td></tr>`; });
     html += `</tbody></table></div>`;
     html += `<div class="section"><div class="section-title">Weighted Averages (tonnage weighted)</div><table><thead><tr><th>Constituent</th><th>Weighted Mean</th></tr></thead><tbody>`;
     constituents.forEach((k) => { html += `<tr><td>${escapeHtml(k.toUpperCase())}</td><td>${escapeHtml(weighted[k])}%</td></tr>`; });

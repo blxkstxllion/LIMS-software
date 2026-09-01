@@ -85,6 +85,24 @@ public class ResultsController : ControllerBase
             var sample = await ResolveSampleAsync(request.SampleId);
             if (sample is null) return NotFound();
 
+            // Composite result: this one analysis represents the primary sample above
+            // plus these others (coning-and-quartering several registered samples down
+            // into a single physical unit before analysis). Duplicates and the primary
+            // itself are dropped — the frontend sends every selected sample including
+            // the primary, so this list is exactly "everything else that was selected".
+            string? additionalSampleNumbers = null;
+            if (request.AdditionalSampleIds is { Count: > 0 })
+            {
+                var additionalSamples = new List<Sample>();
+                foreach (var identifier in request.AdditionalSampleIds.Distinct())
+                {
+                    var additional = await ResolveSampleAsync(identifier);
+                    if (additional is null) return BadRequest(new { message = $"Sample '{identifier}' was not found." });
+                    if (additional.Id != sample.Id) additionalSamples.Add(additional);
+                }
+                if (additionalSamples.Count > 0) additionalSampleNumbers = string.Join(",", additionalSamples.Select(s => s.SampleNumber));
+            }
+
             // Only Draft and Submitted are legal starting points — Approved/Rejected must
             // only ever be reached through UpdateStatus's review-decision path below.
             var initialStatus = ResultStatus.Submitted;
@@ -103,6 +121,7 @@ public class ResultsController : ControllerBase
                 Id = Guid.NewGuid(),
                 SampleId = sample.Id,
                 Sample = sample,
+                AdditionalSampleNumbers = additionalSampleNumbers,
                 AnalysisNumber = request.AnalysisNumber,
                 AnalysisDate = request.AnalysisDate,
                 AnalystName = request.AnalystName,
@@ -218,7 +237,7 @@ public class ResultsController : ControllerBase
         }
     }
 
-    public record CreateResultRequest(string SampleId, string AnalysisNumber, DateTimeOffset AnalysisDate, string AnalystName, string Method, string Equipment, decimal Moisture, decimal Al2O3, decimal SiO2, decimal Fe2O3, decimal TiO2, decimal Loi, decimal Cao, decimal Mgo, decimal Na2O, decimal K2O, decimal? P2O5, decimal? MnO, decimal? Cr2O3, decimal TotalOxides, decimal Asr, decimal Rr, bool Calibrated, decimal? StandardDeviation, string? Repeatability, string Notes, string? Status);
+    public record CreateResultRequest(string SampleId, string AnalysisNumber, DateTimeOffset AnalysisDate, string AnalystName, string Method, string Equipment, decimal Moisture, decimal Al2O3, decimal SiO2, decimal Fe2O3, decimal TiO2, decimal Loi, decimal Cao, decimal Mgo, decimal Na2O, decimal K2O, decimal? P2O5, decimal? MnO, decimal? Cr2O3, decimal TotalOxides, decimal Asr, decimal Rr, bool Calibrated, decimal? StandardDeviation, string? Repeatability, string Notes, string? Status, List<string>? AdditionalSampleIds = null);
     public record UpdateResultStatusRequest(string Status, string? Comment);
 
     public class ResultDto
@@ -228,6 +247,9 @@ public class ResultsController : ControllerBase
         {
             Id = result.Id;
             SampleId = result.Sample?.SampleNumber ?? result.SampleId.ToString();
+            SampleNumbers = string.IsNullOrWhiteSpace(result.AdditionalSampleNumbers)
+                ? new List<string> { SampleId }
+                : new List<string> { SampleId }.Concat(result.AdditionalSampleNumbers.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToList();
             AnalysisNumber = result.AnalysisNumber;
             AnalysisDate = result.AnalysisDate;
             AnalystName = result.AnalystName;
@@ -259,6 +281,9 @@ public class ResultsController : ControllerBase
 
         public Guid Id { get; set; }
         public string SampleId { get; set; } = string.Empty;
+        // SampleId plus any others this one analysis represents (composite/quartered
+        // samples). Always at least [SampleId] — the common single-sample case.
+        public List<string> SampleNumbers { get; set; } = new();
         public string AnalysisNumber { get; set; } = string.Empty;
         public DateTimeOffset AnalysisDate { get; set; }
         public string AnalystName { get; set; } = string.Empty;
