@@ -25,7 +25,7 @@ export async function createUser({ staffId, name, email, password, role, departm
 }
 
 export async function updateUser(staffId, { name, email, role, department }) {
-  const updated = await request(`/api/users/${staffId}`, {
+  const updated = await request(`/api/users/${encodeURIComponent(staffId)}`, {
     method: "PUT",
     body: JSON.stringify({ fullName: name, email, role, department }),
   });
@@ -33,7 +33,7 @@ export async function updateUser(staffId, { name, email, role, department }) {
 }
 
 export async function updateUserStatus(staffId, status) {
-  const updated = await request(`/api/users/${staffId}/status`, {
+  const updated = await request(`/api/users/${encodeURIComponent(staffId)}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
@@ -41,11 +41,11 @@ export async function updateUserStatus(staffId, status) {
 }
 
 export async function deleteUser(staffId) {
-  return request(`/api/users/${staffId}`, { method: "DELETE" });
+  return request(`/api/users/${encodeURIComponent(staffId)}`, { method: "DELETE" });
 }
 
 export async function resetUserPassword(staffId, newPassword) {
-  return request(`/api/users/${staffId}/password`, {
+  return request(`/api/users/${encodeURIComponent(staffId)}/password`, {
     method: "PATCH",
     body: JSON.stringify({ newPassword }),
   });
