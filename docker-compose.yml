@@ -34,6 +34,8 @@ services:
       EnableHttpsRedirection: "false"
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-lims};Username=${POSTGRES_USER:-lims};Password=${POSTGRES_PASSWORD:?}"
       Jwt__Secret: ${JWT_SECRET:?JWT_SECRET must be set - see .env.example}
+      Jwt__Issuer: "https://${DOMAIN:?DOMAIN must be set - see .env.example}"
+      Jwt__Audience: "https://${DOMAIN:?DOMAIN must be set - see .env.example}"
       Cors__AllowedOrigins__0: "https://${DOMAIN:?DOMAIN must be set - see .env.example}"
       Bootstrap__AdminPassword: ${BOOTSTRAP_ADMIN_PASSWORD}
     volumes:
