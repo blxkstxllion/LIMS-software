@@ -25,6 +25,14 @@
 		reverse_proxy api:8080
 	}
 
+	# Outside /api/* on purpose — the frontend calls the API exclusively under /api/*,
+	# but an external uptime monitor hitting the bare domain needs its own route to
+	# this, or it'd fall through to the SPA's catch-all below and "successfully" load
+	# index.html even when the API itself is down.
+	handle /health {
+		reverse_proxy api:8080
+	}
+
 	handle {
 		root * /usr/share/caddy
 		file_server
