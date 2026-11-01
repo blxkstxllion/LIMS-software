@@ -1,5 +1,7 @@
+using System.Text.Json.Serialization;
 using System.Security.Claims;
 using GbcLims.Api.Services;
+using GbcLims.Domain.Constants;
 using GbcLims.Domain.Entities;
 using GbcLims.Domain.Enums;
 using GbcLims.Infrastructure.Persistence;
@@ -185,8 +187,8 @@ public class SamplesController : ControllerBase
 
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
-            var canEditAny = role is "admin" or "bauxite_engineer" or "qa_engineer";
-            var canEditOwn = role == "xrf_chemist" && sample.CreatedById == userId;
+            var canEditAny = role is Roles.Admin or Roles.BauxiteEngineer or Roles.QaEngineer;
+            var canEditOwn = role == Roles.XrfChemist && sample.CreatedById == userId;
             if (!canEditAny && !canEditOwn)
             {
                 return StatusCode(403, new { message = "You do not have permission to update this sample." });
@@ -232,8 +234,8 @@ public class SamplesController : ControllerBase
             // read-only and falls through to the 403 below.
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
-            var canEditAny = role is "admin" or "bauxite_engineer" or "qa_engineer";
-            var canEditOwn = role == "xrf_chemist" && sample.CreatedById == userId;
+            var canEditAny = role is Roles.Admin or Roles.BauxiteEngineer or Roles.QaEngineer;
+            var canEditOwn = role == Roles.XrfChemist && sample.CreatedById == userId;
             if (!canEditAny && !canEditOwn)
             {
                 return StatusCode(403, new { message = "You do not have permission to update this sample." });
@@ -284,8 +286,8 @@ public class SamplesController : ControllerBase
             // qa_engineer and management cannot delete at all.
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
-            var canDeleteAny = role is "admin" or "bauxite_engineer";
-            var canDeleteOwn = role == "xrf_chemist" && sample.CreatedById == userId;
+            var canDeleteAny = role is Roles.Admin or Roles.BauxiteEngineer;
+            var canDeleteOwn = role == Roles.XrfChemist && sample.CreatedById == userId;
             if (!canDeleteAny && !canDeleteOwn)
             {
                 return StatusCode(403, new { message = "You do not have permission to delete this sample." });
@@ -383,10 +385,10 @@ public class SamplesController : ControllerBase
         public Guid Id { get; set; }
         public string AnalysisNumber { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
-        public decimal Al2O3 { get; set; }
-        public decimal SiO2 { get; set; }
-        public decimal Fe2O3 { get; set; }
-        public decimal TiO2 { get; set; }
+        [JsonPropertyName("al2o3")] public decimal Al2O3 { get; set; }
+        [JsonPropertyName("sio2")] public decimal SiO2 { get; set; }
+        [JsonPropertyName("fe2o3")] public decimal Fe2O3 { get; set; }
+        [JsonPropertyName("tio2")] public decimal TiO2 { get; set; }
         public decimal Loi { get; set; }
         public decimal TotalOxides { get; set; }
         public decimal Asr { get; set; }

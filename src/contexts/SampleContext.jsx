@@ -96,6 +96,7 @@ export function SampleProvider({ children }) {
   return <SampleContext.Provider value={value}>{children}</SampleContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- see AuthContext.jsx
 export function useSamples() {
   return useContext(SampleContext);
 }

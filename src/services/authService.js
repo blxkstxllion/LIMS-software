@@ -101,7 +101,7 @@ export async function authenticateUser(staffId, password) {
     return { ...payload.user, name: payload.user.fullName || payload.user.staffId };
   } catch (error) {
     console.error("Auth failed", error);
-    throw new Error("Authentication failed. Please check your credentials or network connection.");
+    throw new Error("Authentication failed. Please check your credentials or network connection.", { cause: error });
   }
 }
 

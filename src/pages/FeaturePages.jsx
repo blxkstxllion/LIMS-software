@@ -142,6 +142,12 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
 
   useEffect(() => {
     if (!selected) return;
+    // Standard load-on-selection-change pattern: set loading, fetch, clear loading in
+    // finally. The stricter set-state-in-effect rule flags any setState inside an
+    // effect body on principle, but there's no cascading-render risk here — this
+    // effect only re-runs when selected?.id itself changes, not in response to
+    // historyLoading/history updating.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistoryLoading(true);
     fetchAuditLogs({ sampleId: selected.id }).then(setHistory).catch((error) => console.error("Failed to load sample history", error)).finally(() => setHistoryLoading(false));
   }, [selected?.id]);
@@ -711,7 +717,70 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
   );
 }
 
-export function COAGenerator({ user, samples, results, coas, setCoas, showToast, onCoaCreated, onCoaStatusChanged }) {
+// Hoisted out of COAGenerator (was defined inline on every render, which resets its
+// state each time) — its only dependency on the enclosing scope was `user`, now an
+// explicit prop instead of a closure capture.
+const COADocument = ({ coa, user }) => (
+  <div style={{ background:"#fff", padding:32, fontFamily:"'Times New Roman',serif", fontSize:12, lineHeight:1.6, maxWidth:680, margin:"0 auto", position:"relative" }}>
+    <img src={"/logo.png"} alt="logo" style={{ position:"absolute", right:20, top:20, width:64, opacity:0.9 }} />
+    <div style={{ textAlign:"center", borderBottom:"3px solid #1e3a8a", paddingBottom:16, marginBottom:20 }}>
+      <div style={{ fontSize:24, fontWeight:800, color:"#1e3a8a", letterSpacing:2 }}>GHANA BAUXITE COMPANY LIMITED</div>
+      <div style={{ fontSize:11, color:"#6b7280" }}>IOP Group · Laboratory Services</div>
+      <div style={{ fontSize:11, fontStyle:"italic", color:"#1e3a8a" }}>ASSAY!! QUALITY OUR CORNERSTONE</div>
+      <div style={{ fontSize:20, fontWeight:700, marginTop:12, letterSpacing:3, color:"#111827" }}>CERTIFICATE OF ANALYSIS</div>
+      <div style={{ fontSize:12, color:"#374151" }}>COA No: <strong>{coa.coaNumber}</strong> &nbsp;|&nbsp; Issue Date: <strong>{formatDate(coa.issueDate)}</strong></div>
+    </div>
+    <div className="lims-grid-2" style={{ gap:16, marginBottom:20 }}>
+      <div style={{ border:"1px solid #d1d5db", borderRadius:6, padding:12 }}>
+        <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>CLIENT INFORMATION</div>
+        <div><strong>Client:</strong> {coa.clientName}</div>
+        <div><strong>Address:</strong> {coa.clientAddress||"—"}</div>
+        <div><strong>Contact:</strong> {coa.clientContact||"—"}</div>
+      </div>
+      <div style={{ border:"1px solid #d1d5db", borderRadius:6, padding:12 }}>
+        <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>SAMPLE INFORMATION</div>
+        <div><strong>Sample ID:</strong> {coa.sampleId}</div>
+        <div><strong>Origin:</strong> {coa.sample?.origin||"—"}</div>
+        <div><strong>Date Received:</strong> {formatDate(coa.sample?.dateReceived)}</div>
+        <div><strong>Date Analyzed:</strong> {formatDate(coa.result?.analysisDate)}</div>
+      </div>
+    </div>
+    {coa.includeResults && coa.result && (
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>ANALYTICAL RESULTS</div>
+        <div style={{ overflowX:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+          <thead><tr style={{ background:"#1e3a8a", color:"#fff" }}><th style={{ padding:"7px 10px", textAlign:"left" }}>Parameter</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Result (%)</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Method</th></tr></thead>
+          <tbody>
+            {[['Aluminium Oxide (Al₂O₃)',coa.result.al2o3],['Silicon Dioxide (SiO₂)',coa.result.sio2],['Iron Oxide (Fe₂O₃)',coa.result.fe2o3],['Titanium Dioxide (TiO₂)',coa.result.tio2],['Loss on Ignition (LOI)',coa.result.loi]].map(([p,v],i)=>(<tr key={p} style={{ background: i%2===0?"#f9fafb":"#fff" }}><td style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb" }}>{p}</td><td style={{ padding:"6px 10px", textAlign:"center", fontWeight:600, borderBottom:"1px solid #e5e7eb" }}>{v}</td><td style={{ padding:"6px 10px", textAlign:"center", color:"#6b7280", borderBottom:"1px solid #e5e7eb" }}>{coa.result.method}</td></tr>))}
+          </tbody>
+        </table>
+        </div>
+        <div className="lims-grid-3" style={{ background:"#f0f7ff", borderRadius:6, padding:10, marginTop:10, gap:8, fontSize:11 }}>
+          <div><strong>Total Oxides:</strong> {coa.result.totalOxides}%</div>
+          <div><strong>Al₂O₃/SiO₂ Ratio:</strong> {coa.result.asr}</div>
+          <div><strong>Reactivity Ratio:</strong> {coa.result.rr}</div>
+        </div>
+      </div>
+    )}
+    {coa.includeMethodology && (
+      <div style={{ marginBottom:20, padding:12, border:"1px solid #e5e7eb", borderRadius:6 }}>
+        <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:6 }}>METHODOLOGY</div>
+        <div style={{ fontSize:11, color:"#374151" }}>Analysis was performed using {coa.result?.method === "Spectroscopy" ? "X-Ray Fluorescence (XRF) Spectroscopy on a Bruker S8 Tiger instrument. The instrument was calibrated using certified reference materials prior to analysis." : "Wet Chemical Analysis following standard laboratory procedures. All reagents used were analytical grade."}</div>
+      </div>
+    )}
+    <div style={{ border:"1px solid #e5e7eb", borderRadius:6, padding:12, marginBottom:20, fontSize:11, background:"#f9fafb" }}>
+      <div style={{ fontWeight:700, color:"#374151", marginBottom:4 }}>CERTIFICATION STATEMENT</div>
+      <div>This is to certify that the above results were obtained through analysis of the sample as received. The results relate only to the sample analyzed. This certificate shall not be reproduced except in full without the written approval of the laboratory.</div>
+    </div>
+    <div className="lims-grid-2" style={{ gap:20 }}>
+      <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Analyzed By:</strong> {coa.result?.analystName||user.name}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.result?.analysisDate)}</div></div>
+      <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Approved By:</strong> {coa.approvedBy||"Pending approval"}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {coa.approvedAt?formatDate(coa.approvedAt):"—"}</div></div>
+    </div>
+  </div>
+);
+
+export function COAGenerator({ user, results, coas, setCoas, showToast, onCoaCreated, onCoaStatusChanged }) {
   // resultId (not sampleId) is the thing that's actually selected — a sample can have
   // more than one approved result over time (e.g. after a re-assay), and a COA has to
   // be generated from one specific result, frozen at creation time, not "whichever one
@@ -752,66 +821,6 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
       showToast(error.message || "Could not create COA.", "error");
     }
   };
-
-  const COADocument = ({ coa }) => (
-    <div style={{ background:"#fff", padding:32, fontFamily:"'Times New Roman',serif", fontSize:12, lineHeight:1.6, maxWidth:680, margin:"0 auto", position:"relative" }}>
-      <img src={"/logo.png"} alt="logo" style={{ position:"absolute", right:20, top:20, width:64, opacity:0.9 }} />
-      <div style={{ textAlign:"center", borderBottom:"3px solid #1e3a8a", paddingBottom:16, marginBottom:20 }}>
-        <div style={{ fontSize:24, fontWeight:800, color:"#1e3a8a", letterSpacing:2 }}>GHANA BAUXITE COMPANY LIMITED</div>
-        <div style={{ fontSize:11, color:"#6b7280" }}>IOP Group · Laboratory Services</div>
-        <div style={{ fontSize:11, fontStyle:"italic", color:"#1e3a8a" }}>ASSAY!! QUALITY OUR CORNERSTONE</div>
-        <div style={{ fontSize:20, fontWeight:700, marginTop:12, letterSpacing:3, color:"#111827" }}>CERTIFICATE OF ANALYSIS</div>
-        <div style={{ fontSize:12, color:"#374151" }}>COA No: <strong>{coa.coaNumber}</strong> &nbsp;|&nbsp; Issue Date: <strong>{formatDate(coa.issueDate)}</strong></div>
-      </div>
-      <div className="lims-grid-2" style={{ gap:16, marginBottom:20 }}>
-        <div style={{ border:"1px solid #d1d5db", borderRadius:6, padding:12 }}>
-          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>CLIENT INFORMATION</div>
-          <div><strong>Client:</strong> {coa.clientName}</div>
-          <div><strong>Address:</strong> {coa.clientAddress||"—"}</div>
-          <div><strong>Contact:</strong> {coa.clientContact||"—"}</div>
-        </div>
-        <div style={{ border:"1px solid #d1d5db", borderRadius:6, padding:12 }}>
-          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>SAMPLE INFORMATION</div>
-          <div><strong>Sample ID:</strong> {coa.sampleId}</div>
-          <div><strong>Origin:</strong> {coa.sample?.origin||"—"}</div>
-          <div><strong>Date Received:</strong> {formatDate(coa.sample?.dateReceived)}</div>
-          <div><strong>Date Analyzed:</strong> {formatDate(coa.result?.analysisDate)}</div>
-        </div>
-      </div>
-      {coa.includeResults && coa.result && (
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>ANALYTICAL RESULTS</div>
-          <div style={{ overflowX:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
-            <thead><tr style={{ background:"#1e3a8a", color:"#fff" }}><th style={{ padding:"7px 10px", textAlign:"left" }}>Parameter</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Result (%)</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Method</th></tr></thead>
-            <tbody>
-              {[['Aluminium Oxide (Al₂O₃)',coa.result.al2o3],['Silicon Dioxide (SiO₂)',coa.result.sio2],['Iron Oxide (Fe₂O₃)',coa.result.fe2o3],['Titanium Dioxide (TiO₂)',coa.result.tio2],['Loss on Ignition (LOI)',coa.result.loi]].map(([p,v],i)=>(<tr key={p} style={{ background: i%2===0?"#f9fafb":"#fff" }}><td style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb" }}>{p}</td><td style={{ padding:"6px 10px", textAlign:"center", fontWeight:600, borderBottom:"1px solid #e5e7eb" }}>{v}</td><td style={{ padding:"6px 10px", textAlign:"center", color:"#6b7280", borderBottom:"1px solid #e5e7eb" }}>{coa.result.method}</td></tr>))}
-            </tbody>
-          </table>
-          </div>
-          <div className="lims-grid-3" style={{ background:"#f0f7ff", borderRadius:6, padding:10, marginTop:10, gap:8, fontSize:11 }}>
-            <div><strong>Total Oxides:</strong> {coa.result.totalOxides}%</div>
-            <div><strong>Al₂O₃/SiO₂ Ratio:</strong> {coa.result.asr}</div>
-            <div><strong>Reactivity Ratio:</strong> {coa.result.rr}</div>
-          </div>
-        </div>
-      )}
-      {coa.includeMethodology && (
-        <div style={{ marginBottom:20, padding:12, border:"1px solid #e5e7eb", borderRadius:6 }}>
-          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:6 }}>METHODOLOGY</div>
-          <div style={{ fontSize:11, color:"#374151" }}>Analysis was performed using {coa.result?.method === "Spectroscopy" ? "X-Ray Fluorescence (XRF) Spectroscopy on a Bruker S8 Tiger instrument. The instrument was calibrated using certified reference materials prior to analysis." : "Wet Chemical Analysis following standard laboratory procedures. All reagents used were analytical grade."}</div>
-        </div>
-      )}
-      <div style={{ border:"1px solid #e5e7eb", borderRadius:6, padding:12, marginBottom:20, fontSize:11, background:"#f9fafb" }}>
-        <div style={{ fontWeight:700, color:"#374151", marginBottom:4 }}>CERTIFICATION STATEMENT</div>
-        <div>This is to certify that the above results were obtained through analysis of the sample as received. The results relate only to the sample analyzed. This certificate shall not be reproduced except in full without the written approval of the laboratory.</div>
-      </div>
-      <div className="lims-grid-2" style={{ gap:20 }}>
-        <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Analyzed By:</strong> {coa.result?.analystName||user.name}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.result?.analysisDate)}</div></div>
-        <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Approved By:</strong> {coa.approvedBy||"Pending approval"}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {coa.approvedAt?formatDate(coa.approvedAt):"—"}</div></div>
-      </div>
-    </div>
-  );
 
   const exportCOAToWord = () => {
     if (!docRef.current) return;
@@ -856,7 +865,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         {preview.status === "Draft" && <Button onClick={()=>setSignModal("Approved")} variant="success">✅ Approve COA</Button>}
         {preview.status === "Approved" && <Button onClick={()=>setSignModal("Issued")} variant="warning">📤 Mark as Issued</Button>}
       </div>
-      <div ref={docRef} style={{ border:"1.5px solid #e5e7eb", borderRadius:12, overflow:"hidden" }}><COADocument coa={preview} /></div>
+      <div ref={docRef} style={{ border:"1.5px solid #e5e7eb", borderRadius:12, overflow:"hidden" }}><COADocument coa={preview} user={user} /></div>
       {signModal && (
         <Modal title={signModal === "Approved" ? "Approve COA" : "Mark COA as Issued"} onClose={()=>{setSignModal(null);setSignPassword("");}}>
           <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>{signModal === "Approved" ? "Approving this certificate confirms it's ready to be issued." : "Marking this certificate as Issued confirms it has been sent to the client."}</div>
@@ -931,14 +940,13 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
   );
 }
 
-export function QCManagement({ user, samples, showToast }) {
+export function QCManagement({ user, showToast }) {
   const [qcSamples, setQcSamples] = useState([]);
-  const [qcLoading, setQcLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type:"Standard", refId:"", expectedAl2o3:"", actualAl2o3:"" });
 
   useEffect(() => {
-    fetchQcSamples().then(setQcSamples).catch((error) => { console.error("Failed to load QC samples", error); showToast("Unable to load QC samples.", "error"); }).finally(() => setQcLoading(false));
+    fetchQcSamples().then(setQcSamples).catch((error) => { console.error("Failed to load QC samples", error); showToast("Unable to load QC samples.", "error"); });
   }, []);
 
   const passRate = qcSamples.length ? (qcSamples.filter((q)=>q.status === "Pass").length / qcSamples.length * 100).toFixed(0) : 0;
@@ -1127,7 +1135,7 @@ export function FileManagement({ user, samples, showToast }) {
         </div>
       </div>
       <div className="lims-grid-5" style={{ gap:12, marginBottom:24 }}>
-        {[['PDF','📄','#fee2e2'],['Excel','📊','#dcfce7'],['Image','🖼️','#dbeafe'],['CSV','📋','#fef3c7'],['Other','📁','#f3f4f6']].map(([type,icon,bg])=>(<div key={type} style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:"14px 16px", textAlign:"center" }}><div style={{ fontSize:24, marginBottom:4 }}>{icon}</div><div style={{ fontSize:18, fontWeight:700, color:"#111827" }}>{files.filter((f)=>f.type===type).length}</div><div style={{ fontSize:12, color:"#6b7280" }}>{type} files</div></div>))}
+        {[['PDF','📄'],['Excel','📊'],['Image','🖼️'],['CSV','📋'],['Other','📁']].map(([type,icon])=>(<div key={type} style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:"14px 16px", textAlign:"center" }}><div style={{ fontSize:24, marginBottom:4 }}>{icon}</div><div style={{ fontSize:18, fontWeight:700, color:"#111827" }}>{files.filter((f)=>f.type===type).length}</div><div style={{ fontSize:12, color:"#6b7280" }}>{type} files</div></div>))}
       </div>
       <div style={{ marginBottom:16 }}>
         <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search files…" style={{ width:"100%", maxWidth:400, padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
@@ -1515,7 +1523,7 @@ export function AccessDenied({ page }) {
   return <div style={{ padding:60, textAlign:"center" }}><div style={{ fontSize:60, marginBottom:16 }}>🔒</div><div style={{ fontSize:20, fontWeight:700, color:"#991b1b", marginBottom:8 }}>Access Denied</div><div style={{ fontSize:14, color:"#6b7280" }}>You do not have permission to access <strong>{page}</strong>.</div></div>;
 }
 
-export function AnalyticsPage({ user, samples, results, coas, toast }) {
+export function AnalyticsPage({ samples, results, coas }) {
   return <Reports samples={samples} results={results} coas={coas} />;
 }
 

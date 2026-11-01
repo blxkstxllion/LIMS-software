@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
+import { PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, FileText, Target, FolderOpen, TrendingUp, Settings, Clock, Bell, Users, Activity } from "lucide-react";
 import { ROLE_LABELS, ROLE_COLORS } from "../constants/lims";
 import { formatDate, getGreeting, statusColor, statusBg, priorityColor, priorityBg } from "../utils/lims";
@@ -7,7 +7,7 @@ import { Badge, StatCard } from "../components/shared";
 import { fetchUsers } from "../services/userService";
 import { fetchDashboardStats } from "../services/dashboardService";
 
-export default function Dashboard({ user, samples, results, coas, onNavigate }) {
+export default function Dashboard({ user, samples, onNavigate }) {
   const [activeUserCount, setActiveUserCount] = useState(null);
   // Server-aggregated totals/chart data, not derived from the `samples`/`results`
   // props — those are only ever the current page (25 records) loaded elsewhere, so

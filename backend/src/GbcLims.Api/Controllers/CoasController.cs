@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Security.Claims;
 using GbcLims.Api.Services;
 using GbcLims.Domain.Entities;
@@ -338,10 +339,10 @@ public class CoasController : ControllerBase
         public string AnalystName { get; set; } = string.Empty;
         public string Method { get; set; } = string.Empty;
         public DateTimeOffset AnalysisDate { get; set; }
-        public decimal Al2O3 { get; set; }
-        public decimal SiO2 { get; set; }
-        public decimal Fe2O3 { get; set; }
-        public decimal TiO2 { get; set; }
+        [JsonPropertyName("al2o3")] public decimal Al2O3 { get; set; }
+        [JsonPropertyName("sio2")] public decimal SiO2 { get; set; }
+        [JsonPropertyName("fe2o3")] public decimal Fe2O3 { get; set; }
+        [JsonPropertyName("tio2")] public decimal TiO2 { get; set; }
         public decimal Loi { get; set; }
         public decimal TotalOxides { get; set; }
         public decimal Asr { get; set; }

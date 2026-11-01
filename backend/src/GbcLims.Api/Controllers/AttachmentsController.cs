@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using GbcLims.Api.Services;
+using GbcLims.Domain.Constants;
 using GbcLims.Domain.Entities;
 using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -54,10 +55,11 @@ public class AttachmentsController : ControllerBase
     private string CurrentUserDisplayName => User.FindFirst("fullName")?.Value ?? User.FindFirst("staffId")?.Value ?? User.Identity?.Name ?? "Unknown";
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<AttachmentDto>>> Get([FromQuery] string? sampleId)
+    public async Task<ActionResult<IEnumerable<AttachmentDto>>> Get([FromQuery] string? sampleId, [FromQuery] int limit = 200)
     {
         try
         {
+            limit = Math.Clamp(limit, 1, 200);
             var query = _context.Attachments.Include(a => a.Sample).AsQueryable();
             if (!string.IsNullOrWhiteSpace(sampleId))
             {
@@ -71,7 +73,12 @@ public class AttachmentsController : ControllerBase
                 }
             }
 
-            var attachments = await query.OrderByDescending(a => a.UploadedAt).ToListAsync();
+            // Capped, not truly paged: unlike Samples/Results/Coas, nothing in the UI
+            // currently needs a page beyond the first, and keeping the response a bare
+            // array (not {items, total, ...}) avoids a frontend contract change for a
+            // table with zero rows in production today. Revisit if File Management
+            // grows enough that 200 stops being "effectively everything."
+            var attachments = await query.OrderByDescending(a => a.UploadedAt).Take(limit).ToListAsync();
             return Ok(attachments.Select(a => new AttachmentDto(a)));
         }
         catch (Exception ex)
@@ -95,7 +102,7 @@ public class AttachmentsController : ControllerBase
             // src/constants/lims.js) — uploading a file is a write, so it shouldn't be
             // reachable just because this endpoint was otherwise unrestricted by role.
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (role == "management")
+            if (role == Roles.Management)
             {
                 return StatusCode(403, new { message = "Management access is read-only and cannot upload files." });
             }
@@ -191,7 +198,7 @@ public class AttachmentsController : ControllerBase
             var currentUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
             // By user ID, not display name — two staff sharing a display name must
             // never be able to delete each other's files.
-            if (role != "admin" && attachment.UploadedById != currentUserId)
+            if (role != Roles.Admin && attachment.UploadedById != currentUserId)
             {
                 return StatusCode(403, new { message = "You do not have permission to delete this file." });
             }

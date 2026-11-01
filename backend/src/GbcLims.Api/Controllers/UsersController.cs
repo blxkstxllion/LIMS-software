@@ -1,4 +1,5 @@
 using GbcLims.Api.Services;
+using GbcLims.Domain.Constants;
 using GbcLims.Domain.Entities;
 using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -11,7 +12,7 @@ namespace GbcLims.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "admin")]
+[Authorize(Roles = Roles.Admin)]
 public class UsersController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;

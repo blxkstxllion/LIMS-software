@@ -1,5 +1,7 @@
+using System.Text.Json.Serialization;
 using System.Security.Claims;
 using GbcLims.Api.Services;
+using GbcLims.Domain.Constants;
 using GbcLims.Domain.Entities;
 using GbcLims.Domain.Enums;
 using GbcLims.Infrastructure.Persistence;
@@ -267,7 +269,7 @@ public class ResultsController : ControllerBase
             {
                 // Submitting your own draft is a continuation of creating it, not a review
                 // decision — gated the same way as creating a result in the first place.
-                if (result.CreatedById != userId || role is not ("admin" or "xrf_chemist" or "bauxite_engineer"))
+                if (result.CreatedById != userId || role is not (Roles.Admin or Roles.XrfChemist or Roles.BauxiteEngineer))
                 {
                     return StatusCode(403, new { message = "Only the result's creator can submit their own draft." });
                 }
@@ -289,7 +291,7 @@ public class ResultsController : ControllerBase
             {
                 // Approve/reject is a review decision: gated to approve-capable roles, and
                 // segregated so the same person who created a result can't also review it.
-                if (role is not ("admin" or "bauxite_engineer" or "qa_engineer"))
+                if (role is not (Roles.Admin or Roles.BauxiteEngineer or Roles.QaEngineer))
                 {
                     return StatusCode(403, new { message = "You do not have permission to update this result." });
                 }
@@ -386,10 +388,10 @@ public class ResultsController : ControllerBase
         public string Method { get; set; } = string.Empty;
         public string Equipment { get; set; } = string.Empty;
         public decimal Moisture { get; set; }
-        public decimal Al2O3 { get; set; }
-        public decimal SiO2 { get; set; }
-        public decimal Fe2O3 { get; set; }
-        public decimal TiO2 { get; set; }
+        [JsonPropertyName("al2o3")] public decimal Al2O3 { get; set; }
+        [JsonPropertyName("sio2")] public decimal SiO2 { get; set; }
+        [JsonPropertyName("fe2o3")] public decimal Fe2O3 { get; set; }
+        [JsonPropertyName("tio2")] public decimal TiO2 { get; set; }
         public decimal Loi { get; set; }
         public decimal Cao { get; set; }
         public decimal Mgo { get; set; }

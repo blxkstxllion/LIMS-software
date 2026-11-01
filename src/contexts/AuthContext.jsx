@@ -43,6 +43,10 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// This hook and AuthProvider are the public API of this context by design; splitting
+// the hook into its own file for Vite's Fast Refresh (a dev-only HMR nicety) isn't
+// worth the import churn across every file that uses useAuth.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext);
 }

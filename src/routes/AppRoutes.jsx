@@ -1,4 +1,4 @@
-import { SampleRegistration, SampleManagement, SampleVerification, ResultsEntry, COAGenerator, QCManagement, FileManagement, Reports, AdminPanel, AccessDenied, AnalyticsPage, SettingsPage } from "../pages/FeaturePages";
+import { SampleRegistration, SampleManagement, SampleVerification, ResultsEntry, COAGenerator, QCManagement, FileManagement, Reports, AdminPanel, AccessDenied } from "../pages/FeaturePages";
 import Dashboard from "../pages/Dashboard";
 
 export default function AppRoutes({

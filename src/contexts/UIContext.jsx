@@ -18,6 +18,7 @@ export function UIProvider({ children }) {
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- see AuthContext.jsx
 export function useUI() {
   return useContext(UIContext);
 }

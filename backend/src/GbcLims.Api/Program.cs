@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using GbcLims.Api.Services;
+using GbcLims.Domain.Constants;
 using GbcLims.Domain.Entities;
 using GbcLims.Infrastructure.Extensions;
 using GbcLims.Infrastructure.Persistence;
@@ -47,6 +48,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 
 var jwtSecret = builder.Configuration["Jwt:Secret"];
 if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
@@ -107,9 +109,9 @@ builder.Services.AddAuthorization(options =>
     // Mirrors the role permissions already expressed in the frontend's PERMISSIONS
     // table (src/constants/lims.js) and SIDEBAR_MENU, enforced server-side instead
     // of only in the UI.
-    options.AddPolicy("CanCreateRecords", policy => policy.RequireRole("admin", "xrf_chemist", "bauxite_engineer"));
-    options.AddPolicy("CanApproveResults", policy => policy.RequireRole("admin", "bauxite_engineer", "qa_engineer"));
-    options.AddPolicy("CanGenerateCoas", policy => policy.RequireRole("admin", "bauxite_engineer", "qa_engineer"));
+    options.AddPolicy("CanCreateRecords", policy => policy.RequireRole(Roles.Admin, Roles.XrfChemist, Roles.BauxiteEngineer));
+    options.AddPolicy("CanApproveResults", policy => policy.RequireRole(Roles.Admin, Roles.BauxiteEngineer, Roles.QaEngineer));
+    options.AddPolicy("CanGenerateCoas", policy => policy.RequireRole(Roles.Admin, Roles.BauxiteEngineer, Roles.QaEngineer));
 });
 
 builder.Services.AddRateLimiter(options =>
@@ -170,6 +172,13 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+// Unauthenticated by design — this is what the Docker healthcheck and an external
+// uptime monitor hit, neither of which can carry a JWT. Reports both overall status
+// and the "database" check by name, not just a bare 200/503, because the previous
+// deploy's crash-on-migration-failure change (Program.cs) means a broken schema now
+// stops the container from ever reaching this line at all — but a database that goes
+// unreachable only *after* a healthy startup needs to show up here just the same.
+app.MapHealthChecks("/health");
 
 using (var scope = app.Services.CreateScope())
 {
@@ -205,8 +214,7 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
-        var allRoles = new[] { "admin", "xrf_chemist", "bauxite_engineer", "qa_engineer", "management" };
-        foreach (var roleName in allRoles)
+        foreach (var roleName in Roles.All)
         {
             if (!await roleManager.RoleExistsAsync(roleName)) await roleManager.CreateAsync(new ApplicationRole { Name = roleName });
         }
@@ -241,12 +249,12 @@ using (var scope = app.Services.CreateScope())
                     FullName = bootstrapFullName,
                     StaffId = bootstrapStaffId,
                     Department = "IT",
-                    Role = "admin"
+                    Role = Roles.Admin
                 };
                 var bootstrapResult = await userManagerForBootstrap.CreateAsync(bootstrapUser, bootstrapPassword);
                 if (bootstrapResult.Succeeded)
                 {
-                    await userManagerForBootstrap.AddToRoleAsync(bootstrapUser, "admin");
+                    await userManagerForBootstrap.AddToRoleAsync(bootstrapUser, Roles.Admin);
                     app.Logger.LogWarning("Bootstrap admin account {StaffId} created — unset Bootstrap:AdminPassword now that this has run.", bootstrapStaffId);
                 }
                 else
@@ -272,11 +280,11 @@ using (var scope = app.Services.CreateScope())
 
             var seedUsers = new[]
             {
-                new { UserName = "ADMIN", Email = "admin@gbclims.local", FullName = "System Administrator", StaffId = "ADMIN", Department = "IT", Role = "admin" },
-                new { UserName = "CHEMIST", Email = "chemist@gbclims.local", FullName = "XRF Chemist", StaffId = "CHEMIST", Department = "Laboratory", Role = "xrf_chemist" },
-                new { UserName = "ENGINEER", Email = "engineer@gbclims.local", FullName = "Bauxite Analysis Engineer", StaffId = "ENGINEER", Department = "Laboratory", Role = "bauxite_engineer" },
-                new { UserName = "QA", Email = "qa@gbclims.local", FullName = "Quality Assurance Engineer", StaffId = "QA", Department = "Quality Assurance", Role = "qa_engineer" },
-                new { UserName = "MANAGER", Email = "manager@gbclims.local", FullName = "Management", StaffId = "MANAGER", Department = "Management", Role = "management" },
+                new { UserName = "ADMIN", Email = "admin@gbclims.local", FullName = "System Administrator", StaffId = "ADMIN", Department = "IT", Role = Roles.Admin },
+                new { UserName = "CHEMIST", Email = "chemist@gbclims.local", FullName = "XRF Chemist", StaffId = "CHEMIST", Department = "Laboratory", Role = Roles.XrfChemist },
+                new { UserName = "ENGINEER", Email = "engineer@gbclims.local", FullName = "Bauxite Analysis Engineer", StaffId = "ENGINEER", Department = "Laboratory", Role = Roles.BauxiteEngineer },
+                new { UserName = "QA", Email = "qa@gbclims.local", FullName = "Quality Assurance Engineer", StaffId = "QA", Department = "Quality Assurance", Role = Roles.QaEngineer },
+                new { UserName = "MANAGER", Email = "manager@gbclims.local", FullName = "Management", StaffId = "MANAGER", Department = "Management", Role = Roles.Management },
             };
 
             const string seedPassword = "Test1234";

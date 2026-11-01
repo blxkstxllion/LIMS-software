@@ -50,6 +50,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # Covers the window from container start to Program.cs finishing
+      # db.Database.Migrate() — a real migration against production data can take
+      # longer than a couple of healthcheck intervals, and that's not the same thing
+      # as the service being unhealthy.
+      start_period: 30s
     networks: [lims-network]
     # Not published to the host — the frontend container reverse-proxies /api/* to this
     # service internally; nothing outside lims-network needs to reach it directly.
@@ -60,7 +70,8 @@ services:
       dockerfile: Dockerfile.frontend
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     # No host port published — the shared Caddy instance (separate compose project,
     # already running on this host) is the sole public entry point and terminates TLS
     # in front of this container. The explicit alias matters: other apps' frontend

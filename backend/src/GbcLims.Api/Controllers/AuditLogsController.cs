@@ -1,3 +1,4 @@
+using GbcLims.Domain.Constants;
 using GbcLims.Domain.Entities;
 using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -28,7 +29,7 @@ public class AuditLogsController : ControllerBase
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(sampleId) && User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value != "admin")
+            if (string.IsNullOrWhiteSpace(sampleId) && User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value != Roles.Admin)
             {
                 return StatusCode(403, new { message = "Only admins can view the full audit log." });
             }
