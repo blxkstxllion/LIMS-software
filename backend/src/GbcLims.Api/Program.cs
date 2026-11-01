@@ -112,6 +112,23 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CanGenerateCoas", policy => policy.RequireRole("admin", "bauxite_engineer", "qa_engineer"));
 });
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Per-IP, not global — one abusive client shouldn't lock legitimate users out of
+    // login. Identity's own per-account lockout (ServiceCollectionExtensions) already
+    // handles sustained password guessing against one account; this stops the same IP
+    // from hammering the endpoint itself (across many accounts, or just load).
+    options.AddPolicy("auth", httpContext => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = 10,
+            QueueLimit = 0
+        }));
+});
+
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:5173", "http://localhost:5174" };
 
@@ -132,6 +149,7 @@ if (enableHttpsRedirection)
 }
 
 app.UseRouting();
+app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
@@ -150,23 +168,29 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<GbcLimsDbContext>();
-    try
+    // Migrate() applies versioned migrations and only works against a real relational
+    // provider; the InMemory fallback used when DefaultConnection is unset (local dev
+    // without Postgres) doesn't support migrations at all, so it still needs EnsureCreated.
+    if (db.Database.IsRelational())
     {
-        // Migrate() applies versioned migrations and only works against a real relational
-        // provider; the InMemory fallback used when DefaultConnection is unset (local dev
-        // without Postgres) doesn't support migrations at all, so it still needs EnsureCreated.
-        if (db.Database.IsRelational())
-        {
-            db.Database.Migrate();
-        }
-        else
+        // Deliberately NOT caught: a failed migration against a real database means
+        // the schema the rest of this process assumes may not exist. Logging a warning
+        // and continuing anyway (the old behavior) would run a live LIMS against a
+        // broken or half-migrated schema — crashing on startup is the correct failure
+        // mode here, not a 500 on whatever query happens to hit the missing column
+        // first.
+        db.Database.Migrate();
+    }
+    else
+    {
+        try
         {
             db.Database.EnsureCreated();
         }
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogWarning(ex, "Database schema creation skipped");
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "In-memory database creation skipped");
+        }
     }
 
     // Roles are just names, not credentials — created in every environment, since

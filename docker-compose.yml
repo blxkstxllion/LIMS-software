@@ -9,7 +9,11 @@ name: lims
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Pinned to the exact digest already running in production (verified via `docker
+    # inspect`) — "16-alpine" is a moving tag; this makes `docker compose up` on any
+    # host reproduce the same image byte-for-byte instead of silently pulling whatever
+    # 16-alpine happens to resolve to that day. Bump deliberately, not automatically.
+    image: postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lims}

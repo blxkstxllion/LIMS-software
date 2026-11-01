@@ -16,6 +16,7 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<QcSample> QcSamples => Set<QcSample>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -88,6 +89,14 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
         {
             entity.HasOne(e => e.User).WithMany(u => u.AuditLogs).HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.Sample).WithMany(s => s.AuditLogs).HasForeignKey(e => e.SampleId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            // Cascade: a refresh token is only ever meaningful alongside its user, not
+            // a historical record worth preserving (unlike Sample/Result's Restrict).
+            entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<QcSample>(entity =>

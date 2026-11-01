@@ -4,6 +4,23 @@
 # make Caddy attempt its own ACME/HTTPS handshake for a port nothing external can reach,
 # which would just fail repeatedly for no reason.
 :8080 {
+	# Applies to every response from this app, API or static — the outer shared Caddy
+	# passes response headers through as-is, so these reach the browser regardless of
+	# that extra hop. style-src allows 'unsafe-inline' because the whole UI is React
+	# inline style objects; those become direct element.style property assignments at
+	# runtime, not HTML-parsed style="" attributes, so CSP doesn't actually need to
+	# allow them — but recharts/lucide-react are third-party and unverified here, so
+	# this stays as a safety margin rather than risk breaking charts in production.
+	# script-src has no such allowance: the production build has zero inline <script>
+	# tags, only the one hashed bundle this origin serves itself.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
 	handle /api/* {
 		reverse_proxy api:8080
 	}

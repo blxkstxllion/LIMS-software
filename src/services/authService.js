@@ -100,10 +100,13 @@ export function clearStoredAuth() {
 
 export async function logoutUser() {
   try {
-    // Revokes the refresh token server-side so a stolen one can't keep minting new
-    // access tokens after the user logs out. Best-effort: local state gets cleared
-    // either way, so a network failure never leaves the user stuck "logged in".
-    await request("/api/auth/logout", { method: "POST" });
+    // Revokes just this device's refresh token server-side (identified by the token
+    // itself, sent in the body) so a stolen one can't keep minting new access tokens
+    // after the user logs out — other devices/sessions stay signed in. Best-effort:
+    // local state gets cleared either way, so a network failure never leaves the user
+    // stuck "logged in".
+    const refreshToken = localStorage.getItem("gbc_refresh_token");
+    await request("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) });
   } catch (error) {
     console.error("Logout request failed", error);
   } finally {

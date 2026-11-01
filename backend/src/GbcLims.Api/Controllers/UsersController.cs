@@ -36,6 +36,18 @@ public class UsersController : ControllerBase
     private async Task<IDbContextTransaction?> BeginAuditedTransactionAsync()
         => _context.Database.IsRelational() ? await _context.Database.BeginTransactionAsync() : null;
 
+    // Suspending or password-resetting a user must end every one of their sessions
+    // immediately, not up to 7 days later when each refresh token would otherwise
+    // expire on its own — Login/Refresh both already check IsActive, but a
+    // currently-logged-in client never calls either again on its own until its access
+    // token expires or it tries to refresh, so revoking here is what actually closes
+    // that window right away.
+    private async Task RevokeAllRefreshTokensAsync(Guid userId)
+    {
+        var activeTokens = await _context.RefreshTokens.Where(t => t.UserId == userId && t.RevokedAt == null).ToListAsync();
+        foreach (var token in activeTokens) token.RevokedAt = DateTimeOffset.UtcNow;
+    }
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<UserDto>>> Get()
     {
@@ -147,18 +159,11 @@ public class UsersController : ControllerBase
             user.IsActive = isActive;
             user.UpdatedAt = DateTimeOffset.UtcNow;
 
-            // Suspending a user must end their session immediately, not up to 7 days later
-            // when their refresh token would otherwise expire on its own. Login and Refresh
-            // both already check IsActive, but a currently-logged-in user's client never
-            // calls either of those again on its own until the access token expires or the
-            // refresh token is used — clearing the refresh token here closes that window.
+            await using var transaction = await BeginAuditedTransactionAsync();
             if (!isActive)
             {
-                user.RefreshToken = null;
-                user.RefreshTokenExpiryTime = null;
+                await RevokeAllRefreshTokensAsync(user.Id);
             }
-
-            await using var transaction = await BeginAuditedTransactionAsync();
             await _userManager.UpdateAsync(user);
             _auditLogService.Log("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} {(isActive ? "activated" : "suspended")}", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, oldValues: new { IsActive = wasActive }, newValues: new { IsActive = isActive });
             await _context.SaveChangesAsync();
@@ -193,8 +198,7 @@ public class UsersController : ControllerBase
                 return BadRequest(new { message = string.Join(" ", result.Errors.Select(e => e.Description)) });
             }
 
-            user.RefreshToken = null;
-            user.RefreshTokenExpiryTime = null;
+            await RevokeAllRefreshTokensAsync(user.Id);
             user.UpdatedAt = DateTimeOffset.UtcNow;
             await _userManager.UpdateAsync(user);
 

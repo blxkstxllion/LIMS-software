@@ -14,6 +14,14 @@ namespace GbcLims.Api.Controllers;
 public class AttachmentsController : ControllerBase
 {
     private const long MaxFileSizeBytes = 50 * 1024 * 1024;
+    // Lab documents and images only — no executables, scripts, or archives. Checked by
+    // extension (case-insensitive); the on-disk filename is always a fresh GUID
+    // regardless (see the comment on Upload below), so this is purely about what kind
+    // of content the lab accepts, not path safety.
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".csv", ".xlsx", ".docx", ".jpg", ".jpeg", ".png"
+    };
 
     private readonly GbcLimsDbContext _context;
     private readonly AuditLogService _auditLogService;
@@ -83,6 +91,21 @@ public class AttachmentsController : ControllerBase
             if (request.File is null || request.File.Length == 0) return BadRequest(new { message = "No file provided." });
             if (request.File.Length > MaxFileSizeBytes) return BadRequest(new { message = "File exceeds the 50MB limit." });
 
+            // Management is a read-only role everywhere else in the app (PERMISSIONS in
+            // src/constants/lims.js) — uploading a file is a write, so it shouldn't be
+            // reachable just because this endpoint was otherwise unrestricted by role.
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (role == "management")
+            {
+                return StatusCode(403, new { message = "Management access is read-only and cannot upload files." });
+            }
+
+            var requestExtension = Path.GetExtension(request.File.FileName);
+            if (string.IsNullOrWhiteSpace(requestExtension) || !AllowedExtensions.Contains(requestExtension))
+            {
+                return BadRequest(new { message = "Unsupported file type. Allowed: PDF, CSV, XLSX, DOCX, JPG, PNG." });
+            }
+
             Guid? sampleId = null;
             Sample? sample = null;
             if (!string.IsNullOrWhiteSpace(request.SampleId))
@@ -98,8 +121,7 @@ public class AttachmentsController : ControllerBase
             // and to name the file back on download. The on-disk name is always a fresh
             // GUID, so a name like "../../evil.sh" or one colliding with another upload
             // can't do anything but sit there as harmless display text.
-            var extension = Path.GetExtension(request.File.FileName);
-            var storedFileName = $"{Guid.NewGuid()}{extension}";
+            var storedFileName = $"{Guid.NewGuid()}{requestExtension}";
             var fullPath = Path.Combine(StorageRoot, storedFileName);
 
             await using (var stream = new FileStream(fullPath, FileMode.Create))
