@@ -252,6 +252,12 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ApprovedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ClientAddress")
                         .HasColumnType("text");
 
@@ -273,6 +279,9 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("GeneratedById")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("GeneratedDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -288,11 +297,63 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("IssueDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("IssuedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Remarks")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("ResultId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("SampleId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("SnapshotAl2O3")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<DateTimeOffset>("SnapshotAnalysisDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SnapshotAnalystName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("SnapshotAsr")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<decimal>("SnapshotFe2O3")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<decimal>("SnapshotLoi")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<string>("SnapshotMethod")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("SnapshotRr")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<decimal>("SnapshotSiO2")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<decimal>("SnapshotTiO2")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
+
+                    b.Property<decimal>("SnapshotTotalOxides")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -303,8 +364,14 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ApprovedById");
+
                     b.HasIndex("CoaNumber")
                         .IsUnique();
+
+                    b.HasIndex("IssuedById");
+
+                    b.HasIndex("ResultId");
 
                     b.HasIndex("SampleId");
 
@@ -432,6 +499,10 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
 
                     b.Property<decimal>("Mgo")
                         .HasColumnType("numeric");
+
+                    b.Property<decimal?>("MinorOxides")
+                        .HasPrecision(12, 3)
+                        .HasColumnType("numeric(12,3)");
 
                     b.Property<decimal?>("MnO")
                         .HasColumnType("numeric");
@@ -729,11 +800,33 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GbcLims.Domain.Entities.Coa", b =>
                 {
+                    b.HasOne("GbcLims.Domain.Entities.ApplicationUser", "ApprovedBy")
+                        .WithMany()
+                        .HasForeignKey("ApprovedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GbcLims.Domain.Entities.ApplicationUser", "IssuedBy")
+                        .WithMany()
+                        .HasForeignKey("IssuedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GbcLims.Domain.Entities.Result", "Result")
+                        .WithMany()
+                        .HasForeignKey("ResultId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("GbcLims.Domain.Entities.Sample", "Sample")
                         .WithMany()
                         .HasForeignKey("SampleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("ApprovedBy");
+
+                    b.Navigation("IssuedBy");
+
+                    b.Navigation("Result");
 
                     b.Navigation("Sample");
                 });

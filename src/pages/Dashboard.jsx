@@ -5,35 +5,39 @@ import { ROLE_LABELS, ROLE_COLORS } from "../constants/lims";
 import { formatDate, getGreeting, statusColor, statusBg, priorityColor, priorityBg } from "../utils/lims";
 import { Badge, StatCard } from "../components/shared";
 import { fetchUsers } from "../services/userService";
+import { fetchDashboardStats } from "../services/dashboardService";
 
 export default function Dashboard({ user, samples, results, coas, onNavigate }) {
   const [activeUserCount, setActiveUserCount] = useState(null);
+  // Server-aggregated totals/chart data, not derived from the `samples`/`results`
+  // props — those are only ever the current page (25 records) loaded elsewhere, so
+  // computing "totals" from them was silently wrong once a lab had more than 25
+  // samples. Falls back to zeroes/empty until the real numbers arrive.
+  const [dashboardStats, setDashboardStats] = useState(null);
 
   useEffect(() => {
     if (user.role !== "admin") return;
     fetchUsers().then((users) => setActiveUserCount(users.filter((u) => u.status === "Active").length)).catch((error) => console.error("Failed to load users", error));
   }, [user.role]);
 
+  useEffect(() => {
+    fetchDashboardStats().then(setDashboardStats).catch((error) => console.error("Failed to load dashboard stats", error));
+  }, []);
+
   const stats = {
-    total: samples.length,
-    pending: samples.filter((s) => s.status.includes("Pending")).length,
-    completed: samples.filter((s) => s.status === "Completed" || s.status === "Approved").length,
-    pendingApproval: results.filter((r) => r.status === "Submitted").length,
+    total: dashboardStats?.totalSamples ?? 0,
+    pending: dashboardStats?.pendingSamples ?? 0,
+    inProgress: dashboardStats?.inProgressSamples ?? 0,
+    completed: dashboardStats?.completedSamples ?? 0,
+    rejected: dashboardStats?.rejectedSamples ?? 0,
+    pendingApproval: dashboardStats?.pendingApprovalResults ?? 0,
   };
-  const chartData = [
-    { day: "Mon", samples: 8, completed: 6 },
-    { day: "Tue", samples: 12, completed: 9 },
-    { day: "Wed", samples: 10, completed: 8 },
-    { day: "Thu", samples: 15, completed: 11 },
-    { day: "Fri", samples: 11, completed: 10 },
-    { day: "Sat", samples: 6, completed: 5 },
-    { day: "Sun", samples: 3, completed: 2 },
-  ];
+  const chartData = (dashboardStats?.last7Days ?? []).map((d) => ({ day: d.day, samples: d.samplesRegistered, completed: d.samplesCompleted }));
   const pieData = [
     { name: "Pending", value: stats.pending, color: "#fbbf24" },
-    { name: "In Progress", value: 8, color: "#3b82f6" },
+    { name: "In Progress", value: stats.inProgress, color: "#3b82f6" },
     { name: "Completed", value: stats.completed, color: "#22c55e" },
-    { name: "Rejected", value: 3, color: "#ef4444" },
+    { name: "Rejected", value: stats.rejected, color: "#ef4444" },
   ];
 
   const quickActions = {

@@ -432,12 +432,15 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
   const handleSubmit = async (status) => {
     if (!form.sampleIds.length || !form.al2o3 || !form.sio2 || !form.fe2o3 || !form.tio2 || !form.loi) { showToast(form.sampleIds.length ? "Please fill all required fields." : "Select at least one sample.", "error"); return; }
     try {
+      // analysisNumber, analystName, totalOxides, asr, and rr are deliberately absent —
+      // the server now allocates/computes all five itself (ResultsController.Create),
+      // rather than trusting whatever the browser calculated or guessed. totalOxides/
+      // asr/rr are still computed above (totalOxides/asr/rr consts) purely for the
+      // on-screen live preview as the chemist types.
       const payload = {
         sampleId: form.sampleIds[0],
         additionalSampleIds: form.compositeMode && form.sampleIds.length > 1 ? form.sampleIds : undefined,
-        analysisNumber: `RES-${String(Date.now()).slice(-6)}`,
         analysisDate: form.analysisDate,
-        analystName: form.analystName,
         method: form.method,
         equipment: form.equipment,
         moisture: Number(form.moisture || 0),
@@ -453,9 +456,7 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         p2o5: Number(form.p2o5 || 0),
         mno: Number(form.mno || 0),
         cr2o3: Number(form.cr2o3 || 0),
-        totalOxides: Number(totalOxides.toFixed(2)),
-        asr: Number(asr),
-        rr: Number(rr),
+        minorOxides: Number(form.minorOxides || 0),
         calibrated: form.calibrated,
         standardDeviation: Number(form.stdDev || 0),
         repeatability: form.repeatability,
@@ -673,7 +674,11 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
 }
 
 export function COAGenerator({ user, samples, results, coas, setCoas, showToast, onCoaCreated, onCoaStatusChanged }) {
-  const [form, setForm] = useState({ sampleId:"", clientName:"", clientAddress:"", clientContact:"", includeResults:true, includeMethodology:true, includeQC:false, remarks:"", issueDate:new Date().toISOString().split("T")[0] });
+  // resultId (not sampleId) is the thing that's actually selected — a sample can have
+  // more than one approved result over time (e.g. after a re-assay), and a COA has to
+  // be generated from one specific result, frozen at creation time, not "whichever one
+  // happens to be latest when someone looks at it later".
+  const [form, setForm] = useState({ resultId:"", clientName:"", clientAddress:"", clientContact:"", includeResults:true, includeMethodology:true, includeQC:false, remarks:"", issueDate:new Date().toISOString().split("T")[0] });
   const [preview, setPreview] = useState(null);
   const [viewList, setViewList] = useState(true);
   const docRef = useRef(null);
@@ -682,11 +687,12 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
   const approvedResults = results.filter((r) => r.status === "Approved");
 
   const generateCOA = async () => {
-    if (!form.sampleId || !form.clientName) { showToast("Please select a sample and enter client name.", "error"); return; }
+    const selectedResult = approvedResults.find((r) => r.id === form.resultId);
+    if (!selectedResult || !form.clientName) { showToast("Please select an approved result and enter client name.", "error"); return; }
     try {
       const payload = {
-        sampleId: form.sampleId,
-        coaNumber: `COA-${String(Date.now()).slice(-6)}`,
+        sampleId: selectedResult.sampleId,
+        resultId: selectedResult.id,
         clientName: form.clientName,
         clientAddress: form.clientAddress,
         clientContact: form.clientContact,
@@ -703,7 +709,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
       setCoas((prev) => [coa, ...prev]);
       setPreview(coa);
       setViewList(false);
-      showToast(`COA ${coa.id} generated successfully!`, "success");
+      showToast(`COA ${coa.coaNumber} generated successfully!`, "success");
     } catch (error) {
       showToast(error.message || "Could not create COA.", "error");
     }
@@ -717,7 +723,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         <div style={{ fontSize:11, color:"#6b7280" }}>IOP Group · Laboratory Services</div>
         <div style={{ fontSize:11, fontStyle:"italic", color:"#1e3a8a" }}>ASSAY!! QUALITY OUR CORNERSTONE</div>
         <div style={{ fontSize:20, fontWeight:700, marginTop:12, letterSpacing:3, color:"#111827" }}>CERTIFICATE OF ANALYSIS</div>
-        <div style={{ fontSize:12, color:"#374151" }}>COA No: <strong>{coa.id}</strong> &nbsp;|&nbsp; Issue Date: <strong>{formatDate(coa.issueDate)}</strong></div>
+        <div style={{ fontSize:12, color:"#374151" }}>COA No: <strong>{coa.coaNumber}</strong> &nbsp;|&nbsp; Issue Date: <strong>{formatDate(coa.issueDate)}</strong></div>
       </div>
       <div className="lims-grid-2" style={{ gap:16, marginBottom:20 }}>
         <div style={{ border:"1px solid #d1d5db", borderRadius:6, padding:12 }}>
@@ -771,15 +777,15 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
 
   const exportCOAToWord = () => {
     if (!docRef.current) return;
-    const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${preview.id} COA</title></head><body>${docRef.current.innerHTML}</body></html>`;
+    const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${preview.coaNumber} COA</title></head><body>${docRef.current.innerHTML}</body></html>`;
     const blob = new Blob([html], { type: "application/msword" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `${preview.id}-COA.doc`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = `${preview.coaNumber}-COA.doc`; a.click(); URL.revokeObjectURL(url);
   };
 
   const exportCOAToPDF = () => {
     if (!docRef.current) return;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${preview.id} COA</title><style>body{margin:0;padding:24px;font-family:'Times New Roman',serif;}</style></head><body>${docRef.current.innerHTML}</body></html>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${preview.coaNumber} COA</title><style>body{margin:0;padding:24px;font-family:'Times New Roman',serif;}</style></head><body>${docRef.current.innerHTML}</body></html>`;
     const printWindow = window.open("", "_blank", "toolbar=no,scrollbars=no,resizable=yes,width=900,height=1200");
     if (!printWindow) return showToast("Unable to open print window.", "error");
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
@@ -802,8 +808,8 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         <Button onClick={()=>{setPreview(null);setViewList(true);}} variant="secondary">← Back</Button>
         <Button onClick={exportCOAToPDF} variant="primary">🖨 Export PDF</Button>
         <Button onClick={exportCOAToWord} variant="ghost">⬇ Export Word</Button>
-        <Button onClick={()=>handleCoaStatusChange("Approved", "COA approved.")} variant="success">✅ Approve COA</Button>
-        <Button onClick={()=>handleCoaStatusChange("Issued", "COA marked as issued.")} variant="warning">📤 Mark as Issued</Button>
+        {preview.status === "Draft" && <Button onClick={()=>handleCoaStatusChange("Approved", "COA approved.")} variant="success">✅ Approve COA</Button>}
+        {preview.status === "Approved" && <Button onClick={()=>handleCoaStatusChange("Issued", "COA marked as issued.")} variant="warning">📤 Mark as Issued</Button>}
       </div>
       <div ref={docRef} style={{ border:"1.5px solid #e5e7eb", borderRadius:12, overflow:"hidden" }}><COADocument coa={preview} /></div>
     </div>
@@ -822,7 +828,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
           <tbody>
             {coas.map((c,i)=>(
               <tr key={c.id} style={{ borderBottom:"1px solid #f3f4f6", background: i%2===0?"#fff":"#fafafa" }}>
-                <td style={{ padding:"10px 12px", fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", fontSize:12 }}>{c.id}</td>
+                <td style={{ padding:"10px 12px", fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", fontSize:12 }}>{c.coaNumber}</td>
                 <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12 }}>{c.sampleId}</td>
                 <td style={{ padding:"10px 12px" }}>{c.clientName}</td>
                 <td style={{ padding:"10px 12px", color:"#6b7280" }}>{c.generatedBy}</td>
@@ -849,7 +855,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         </div>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:28 }}>
-        <Select label="Sample" value={form.sampleId} onChange={(v)=>set("sampleId",v)} options={approvedResults.map((r)=>({value:r.sampleId,label:`${r.sampleId} (Result: ${r.id})`}))} required />
+        <Select label="Approved Result" value={form.resultId} onChange={(v)=>set("resultId",v)} options={approvedResults.map((r)=>({value:r.id,label:`${r.sampleId} — ${r.analysisNumber} (${formatDate(r.analysisDate)})`}))} required />
         <div className="lims-grid-2" style={{ gap:"0 20px" }}>
           <Input label="Client Name" value={form.clientName} onChange={(v)=>set("clientName",v)} required />
           <Input label="Client Contact" value={form.clientContact} onChange={(v)=>set("clientContact",v)} placeholder="Email or phone" />
@@ -895,7 +901,19 @@ export function QCManagement({ user, samples, showToast }) {
     }
   };
 
-  const chartData = [{ month:"Jan", pass:92, fail:8 }, { month:"Feb", pass:95, fail:5 }, { month:"Mar", pass:88, fail:12 }, { month:"Apr", pass:96, fail:4 }, { month:"May", pass:parseInt(passRate), fail:100-parseInt(passRate) }];
+  // Real pass/fail rate per month from the last 5 calendar months of actual QC
+  // samples — replaces what used to be four fully hardcoded months (Jan-Apr) with
+  // only the current month computed from real data.
+  const chartData = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (4 - i), 1);
+      const inMonth = qcSamples.filter((q) => { const qd = new Date(q.createdAt); return qd.getFullYear() === d.getFullYear() && qd.getMonth() === d.getMonth(); });
+      const passCount = inMonth.filter((q) => q.status === "Pass").length;
+      const total = inMonth.length;
+      return { month: d.toLocaleDateString("en-US", { month: "short" }), pass: total ? Math.round((passCount / total) * 100) : 0, fail: total ? Math.round(((total - passCount) / total) * 100) : 0 };
+    });
+  }, [qcSamples]);
   const typeCounts = ["Standard","Blank","Duplicate","Spike"].map((t) => ({ name:t, value: qcSamples.filter((q)=>q.type===t).length }));
 
   return (

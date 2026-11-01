@@ -32,6 +32,10 @@ public class Result
     public decimal? P2O5 { get; set; }
     public decimal? MnO { get; set; }
     public decimal? Cr2O3 { get; set; }
+    // Catch-all lump sum for oxides not individually tracked above. Entered as one
+    // field in the UI and folded into TotalOxides on the server (ResultsController),
+    // not reported as its own analyte.
+    public decimal? MinorOxides { get; set; }
     public decimal TotalOxides { get; set; }
     public decimal Asr { get; set; }
     public decimal Rr { get; set; }

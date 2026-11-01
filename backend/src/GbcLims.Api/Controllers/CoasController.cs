@@ -40,85 +40,103 @@ public class CoasController : ControllerBase
         return await _context.Samples.FirstOrDefaultAsync(s => s.SampleNumber == identifier && !s.IsDeleted);
     }
 
+    // The frontend refers to a result by its human-readable AnalysisNumber, not the
+    // internal Guid primary key. Accept either.
+    private async Task<Result?> ResolveResultAsync(string identifier)
+    {
+        if (Guid.TryParse(identifier, out var guid))
+        {
+            var byId = await _context.Results.FirstOrDefaultAsync(r => r.Id == guid);
+            if (byId is not null) return byId;
+        }
+
+        return await _context.Results.FirstOrDefaultAsync(r => r.AnalysisNumber == identifier);
+    }
+
     // The frontend refers to a COA by its human-readable CoaNumber, not the internal
     // Guid primary key. Accept either.
     private async Task<Coa?> ResolveCoaAsync(string identifier)
     {
         if (Guid.TryParse(identifier, out var guid))
         {
-            var byId = await _context.Coas.Include(c => c.Sample).FirstOrDefaultAsync(c => c.Id == guid);
+            var byId = await _context.Coas.Include(c => c.Sample).Include(c => c.ApprovedBy).Include(c => c.IssuedBy).FirstOrDefaultAsync(c => c.Id == guid);
             if (byId is not null) return byId;
         }
 
-        return await _context.Coas.Include(c => c.Sample).FirstOrDefaultAsync(c => c.CoaNumber == identifier);
+        return await _context.Coas.Include(c => c.Sample).Include(c => c.ApprovedBy).Include(c => c.IssuedBy).FirstOrDefaultAsync(c => c.CoaNumber == identifier);
     }
 
+    // Draft -> Approved -> Issued only. The old Draft -> Issued shortcut let a COA skip
+    // review entirely; removed so every certificate that leaves the lab has gone
+    // through the Approved step first.
     private static readonly Dictionary<string, string[]> CoaStatusTransitions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Draft"] = new[] { "Approved", "Issued" },
+        ["Draft"] = new[] { "Approved" },
         ["Approved"] = new[] { "Issued" },
         ["Issued"] = Array.Empty<string>()
     };
 
-    // Builds a CoaDto with the sample and (best-guess) result snapshot embedded, so the
-    // frontend can render a full COA document straight from this object alone — no need
-    // to cross-reference the separately-loaded samples/results lists, which also means
-    // it keeps working after a page reload or after the sample is later soft-deleted.
-    // The domain model has no direct Coa->Result link, so this picks the most recent
-    // approved result for the COA's sample, mirroring the same lookup the frontend used
-    // to do client-side when a COA was first generated.
-    private async Task<CoaDto> BuildCoaDtoAsync(Coa coa)
+    // CoaNumber is allocated here, from a real Postgres sequence, instead of the old
+    // client-side `COA-${Date.now().slice(-6)}` scheme, which repeated every ~16.7
+    // minutes. The InMemory provider (local dev without Postgres configured) has no
+    // sequences, so it falls back to a millisecond-based value — fine for a single-user
+    // dev box, not relied on for real uniqueness guarantees there.
+    private async Task<string> GenerateCoaNumberAsync()
+    {
+        long value = _context.Database.IsRelational()
+            ? await _context.Database.SqlQueryRaw<long>("SELECT nextval('coa_number_seq')").FirstAsync()
+            : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1_000_000;
+        return $"COA-{value:D6}";
+    }
+
+    // Builds a CoaDto purely from the snapshot fields frozen onto the Coa at creation
+    // time (see Create below) — never re-queries Results. This is the fix for the bug
+    // where an issued certificate's displayed values could change if the sample was
+    // re-assayed after the COA was generated.
+    private static CoaDto BuildCoaDto(Coa coa)
     {
         var dto = new CoaDto(coa);
         if (coa.Sample is not null)
         {
             dto.Sample = new CoaSampleSummaryDto { Origin = coa.Sample.Origin, DateReceived = coa.Sample.DateReceived };
         }
-
-        var linkedResult = await _context.Results
-            .Where(r => r.SampleId == coa.SampleId && r.Status == ResultStatus.Approved)
-            .OrderByDescending(r => r.CreatedAt)
-            .FirstOrDefaultAsync();
-        if (linkedResult is not null)
+        dto.Result = new CoaResultSummaryDto
         {
-            dto.Result = new CoaResultSummaryDto
-            {
-                AnalystName = linkedResult.AnalystName,
-                Method = linkedResult.Method,
-                AnalysisDate = linkedResult.AnalysisDate,
-                Al2O3 = linkedResult.Al2O3,
-                SiO2 = linkedResult.SiO2,
-                Fe2O3 = linkedResult.Fe2O3,
-                TiO2 = linkedResult.TiO2,
-                Loi = linkedResult.Loi,
-                TotalOxides = linkedResult.TotalOxides,
-                Asr = linkedResult.Asr,
-                Rr = linkedResult.Rr
-            };
-        }
-
+            AnalystName = coa.SnapshotAnalystName,
+            Method = coa.SnapshotMethod,
+            AnalysisDate = coa.SnapshotAnalysisDate,
+            Al2O3 = coa.SnapshotAl2O3,
+            SiO2 = coa.SnapshotSiO2,
+            Fe2O3 = coa.SnapshotFe2O3,
+            TiO2 = coa.SnapshotTiO2,
+            Loi = coa.SnapshotLoi,
+            TotalOxides = coa.SnapshotTotalOxides,
+            Asr = coa.SnapshotAsr,
+            Rr = coa.SnapshotRr
+        };
         return dto;
     }
 
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] string? sampleId)
+    public async Task<IActionResult> Get([FromQuery] string? sampleId, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
     {
         try
         {
-            var query = _context.Coas.Include(c => c.Sample).AsQueryable();
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+            var query = _context.Coas.Include(c => c.Sample).Include(c => c.ApprovedBy).Include(c => c.IssuedBy).AsQueryable();
             if (!string.IsNullOrWhiteSpace(sampleId))
             {
                 var sample = await ResolveSampleAsync(sampleId);
-                if (sample is null) return Ok(new { items = Array.Empty<CoaDto>() });
+                if (sample is null) return Ok(new { items = Array.Empty<CoaDto>(), total = 0, page, pageSize });
                 query = query.Where(c => c.SampleId == sample.Id);
             }
-            var coas = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
-            var items = new List<CoaDto>();
-            foreach (var coa in coas)
-            {
-                items.Add(await BuildCoaDtoAsync(coa));
-            }
-            return Ok(new { items });
+
+            var total = await query.CountAsync();
+            var coas = await query.OrderByDescending(c => c.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+            var items = coas.Select(BuildCoaDto).ToList();
+            return Ok(new { items, total, page, pageSize });
         }
         catch (Exception ex)
         {
@@ -134,14 +152,34 @@ public class CoasController : ControllerBase
         try
         {
             var sample = await ResolveSampleAsync(request.SampleId);
-            if (sample is null) return NotFound();
+            if (sample is null) return NotFound(new { message = "Sample not found." });
+
+            var result = await ResolveResultAsync(request.ResultId);
+            if (result is null) return BadRequest(new { message = "Result not found." });
+            if (result.SampleId != sample.Id) return BadRequest(new { message = "The selected result does not belong to this sample." });
+            if (result.Status != ResultStatus.Approved) return BadRequest(new { message = "A COA can only be generated from an approved result." });
+
+            var generatedById = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
 
             var coa = new Coa
             {
                 Id = Guid.NewGuid(),
-                CoaNumber = request.CoaNumber,
+                CoaNumber = await GenerateCoaNumberAsync(),
                 SampleId = sample.Id,
                 Sample = sample,
+                ResultId = result.Id,
+                Result = result,
+                SnapshotAnalystName = result.AnalystName,
+                SnapshotMethod = result.Method,
+                SnapshotAnalysisDate = result.AnalysisDate,
+                SnapshotAl2O3 = result.Al2O3,
+                SnapshotSiO2 = result.SiO2,
+                SnapshotFe2O3 = result.Fe2O3,
+                SnapshotTiO2 = result.TiO2,
+                SnapshotLoi = result.Loi,
+                SnapshotTotalOxides = result.TotalOxides,
+                SnapshotAsr = result.Asr,
+                SnapshotRr = result.Rr,
                 ClientName = request.ClientName,
                 ClientAddress = request.ClientAddress,
                 ClientContact = request.ClientContact,
@@ -152,6 +190,7 @@ public class CoasController : ControllerBase
                 IssueDate = request.IssueDate,
                 Status = "Draft",
                 GeneratedBy = User.FindFirst(ClaimTypes.Name)?.Value ?? "system",
+                GeneratedById = generatedById,
                 GeneratedDate = DateTimeOffset.UtcNow,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
@@ -159,17 +198,8 @@ public class CoasController : ControllerBase
 
             _context.Coas.Add(coa);
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Create", "CoA", nameof(Coa), coa.Id.ToString(), "COA generated", Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, sample.Id);
-            var dto = await BuildCoaDtoAsync(coa);
-            return CreatedAtAction(nameof(Get), new { sampleId = sample.Id }, dto);
-        }
-        // CoaNumber is generated client-side from the trailing digits of Date.now(),
-        // which repeats every ~16.7 minutes — a real, if infrequent, collision risk.
-        // Called out separately so the user gets an actionable message.
-        catch (DbUpdateException ex)
-        {
-            _logger.LogWarning(ex, "COA create failed due to a duplicate CoaNumber");
-            return Conflict(new { message = "This COA number is already in use. Please try generating again." });
+            await _auditLogService.LogAsync("Create", "CoA", nameof(Coa), coa.Id.ToString(), $"COA generated from result {result.AnalysisNumber}", generatedById, User.Identity?.Name, sample.Id);
+            return CreatedAtAction(nameof(Get), new { sampleId = sample.Id }, BuildCoaDto(coa));
         }
         catch (Exception ex)
         {
@@ -196,13 +226,35 @@ public class CoasController : ControllerBase
                 return BadRequest(new { message = "Invalid status transition" });
             }
 
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+
+            if (string.Equals(nextStatus, "Approved", StringComparison.OrdinalIgnoreCase))
+            {
+                // No exemption for admin here, unlike Result review (ResultsController) —
+                // the person who generated this COA can never also be the one who
+                // approves it. The certificate leaves the building after this step.
+                if (coa.GeneratedById == userId)
+                {
+                    return StatusCode(403, new { message = "The COA's generator cannot also approve it." });
+                }
+                coa.ApprovedById = userId;
+                coa.ApprovedAt = DateTimeOffset.UtcNow;
+            }
+            else if (string.Equals(nextStatus, "Issued", StringComparison.OrdinalIgnoreCase))
+            {
+                coa.IssuedById = userId;
+                coa.IssuedAt = DateTimeOffset.UtcNow;
+            }
+
             coa.Status = nextStatus;
             coa.UpdatedAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync();
-            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
             await _auditLogService.LogAsync("Update", "CoA", nameof(Coa), coa.Id.ToString(), $"COA status changed to {nextStatus}", userId, User.Identity?.Name, coa.SampleId);
-            var dto = await BuildCoaDtoAsync(coa);
-            return Ok(dto);
+
+            // Re-resolve so the newly-set ApprovedBy/IssuedBy navigation properties are
+            // loaded for the response DTO (the in-memory `coa` instance only has the Ids).
+            var refreshed = await ResolveCoaAsync(coa.Id.ToString());
+            return Ok(BuildCoaDto(refreshed!));
         }
         catch (Exception ex)
         {
@@ -211,7 +263,7 @@ public class CoasController : ControllerBase
         }
     }
 
-    public record CreateCoaRequest(string CoaNumber, string SampleId, string ClientName, string? ClientAddress, string? ClientContact, bool IncludeResults, bool IncludeMethodology, bool IncludeQcData, string? Remarks, DateTimeOffset IssueDate);
+    public record CreateCoaRequest(string SampleId, string ResultId, string ClientName, string? ClientAddress, string? ClientContact, bool IncludeResults, bool IncludeMethodology, bool IncludeQcData, string? Remarks, DateTimeOffset IssueDate);
     public record UpdateCoaStatusRequest(string Status);
 
     public class CoaDto
@@ -233,6 +285,10 @@ public class CoasController : ControllerBase
             Status = coa.Status;
             GeneratedBy = coa.GeneratedBy;
             GeneratedDate = coa.GeneratedDate;
+            ApprovedBy = coa.ApprovedBy?.StaffId;
+            ApprovedAt = coa.ApprovedAt;
+            IssuedBy = coa.IssuedBy?.StaffId;
+            IssuedAt = coa.IssuedAt;
         }
 
         public Guid Id { get; set; }
@@ -249,6 +305,10 @@ public class CoasController : ControllerBase
         public string Status { get; set; } = string.Empty;
         public string GeneratedBy { get; set; } = string.Empty;
         public DateTimeOffset GeneratedDate { get; set; }
+        public string? ApprovedBy { get; set; }
+        public DateTimeOffset? ApprovedAt { get; set; }
+        public string? IssuedBy { get; set; }
+        public DateTimeOffset? IssuedAt { get; set; }
         public CoaSampleSummaryDto? Sample { get; set; }
         public CoaResultSummaryDto? Result { get; set; }
     }

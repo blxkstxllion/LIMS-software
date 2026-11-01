@@ -52,11 +52,40 @@ public class ResultsController : ControllerBase
         return await _context.Results.Include(r => r.Sample).Include(r => r.CreatedBy).FirstOrDefaultAsync(r => r.AnalysisNumber == identifier);
     }
 
+    // AnalysisNumber is allocated here, from a real Postgres sequence, instead of the
+    // old client-side `RES-${Date.now().slice(-6)}` scheme, which repeated every ~16.7
+    // minutes. The InMemory provider (local dev without Postgres configured) has no
+    // sequences, so it falls back to a millisecond-based value — fine for a single-user
+    // dev box, not relied on for real uniqueness guarantees there.
+    private async Task<string> GenerateAnalysisNumberAsync()
+    {
+        long value = _context.Database.IsRelational()
+            ? await _context.Database.SqlQueryRaw<long>("SELECT nextval('result_analysis_number_seq')").FirstAsync()
+            : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1_000_000;
+        return $"RES-{value:D6}";
+    }
+
+    private string CurrentUserDisplayName => User.FindFirst("fullName")?.Value ?? User.FindFirst("staffId")?.Value ?? User.Identity?.Name ?? "Unknown";
+
+    private static bool TryValidateOxideRange(string name, decimal? value, out string? error)
+    {
+        error = null;
+        if (value is null) return true;
+        if (value < 0 || value > 100)
+        {
+            error = $"{name} must be between 0 and 100.";
+            return false;
+        }
+        return true;
+    }
+
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] string? sampleId, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
     {
         try
         {
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
             var query = _context.Results.Include(r => r.Sample).Include(r => r.CreatedBy).AsQueryable();
             if (!string.IsNullOrWhiteSpace(sampleId))
             {
@@ -116,15 +145,47 @@ public class ResultsController : ControllerBase
                 initialStatus = parsedStatus;
             }
 
+            // The browser calculates and sends TotalOxides/Asr/Rr too (for instant
+            // on-screen feedback as the chemist types), but none of its values are
+            // trusted here — anyone calling the API directly could otherwise store any
+            // numbers. Recomputed server-side from the raw oxide readings using the same
+            // formulas as ResultsEntry.jsx (src/pages/FeaturePages.jsx).
+            var oxideChecks = new (string Name, decimal? Value)[]
+            {
+                ("Al2O3", request.Al2O3), ("SiO2", request.SiO2), ("Fe2O3", request.Fe2O3), ("TiO2", request.TiO2),
+                ("LOI", request.Loi), ("CaO", request.Cao), ("MgO", request.Mgo), ("Na2O", request.Na2O),
+                ("K2O", request.K2O), ("P2O5", request.P2O5), ("MnO", request.MnO), ("Cr2O3", request.Cr2O3),
+                ("Minor oxides", request.MinorOxides)
+            };
+            foreach (var (name, value) in oxideChecks)
+            {
+                if (!TryValidateOxideRange(name, value, out var error)) return BadRequest(new { message = error });
+            }
+
+            var totalOxides = Math.Round(
+                request.Al2O3 + request.SiO2 + request.Fe2O3 + request.TiO2 + request.Loi + request.Cao + request.Mgo + request.Na2O + request.K2O
+                + (request.P2O5 ?? 0) + (request.MnO ?? 0) + (request.Cr2O3 ?? 0) + (request.MinorOxides ?? 0), 2);
+            if (totalOxides < 95 || totalOxides > 105)
+            {
+                return BadRequest(new { message = $"Total oxides ({totalOxides}%) is outside the acceptable 95-105% range. Check the entered values." });
+            }
+            var asr = request.SiO2 > 0 ? Math.Round(request.Al2O3 / request.SiO2, 2) : 0;
+            var rr = (request.SiO2 + request.Fe2O3) > 0 ? Math.Round(request.Al2O3 / (request.SiO2 + request.Fe2O3), 2) : 0;
+
+            var createdById = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+
             var result = new Result
             {
                 Id = Guid.NewGuid(),
                 SampleId = sample.Id,
                 Sample = sample,
                 AdditionalSampleNumbers = additionalSampleNumbers,
-                AnalysisNumber = request.AnalysisNumber,
+                AnalysisNumber = await GenerateAnalysisNumberAsync(),
                 AnalysisDate = request.AnalysisDate,
-                AnalystName = request.AnalystName,
+                // Taken from the logged-in user's own claims, not the request body — the
+                // browser used to send whatever name was in the form, so a result could
+                // claim any analyst.
+                AnalystName = CurrentUserDisplayName,
                 Method = request.Method,
                 Equipment = request.Equipment,
                 Moisture = request.Moisture,
@@ -140,15 +201,16 @@ public class ResultsController : ControllerBase
                 P2O5 = request.P2O5,
                 MnO = request.MnO,
                 Cr2O3 = request.Cr2O3,
-                TotalOxides = request.TotalOxides,
-                Asr = request.Asr,
-                Rr = request.Rr,
+                MinorOxides = request.MinorOxides,
+                TotalOxides = totalOxides,
+                Asr = asr,
+                Rr = rr,
                 Calibrated = request.Calibrated,
                 StandardDeviation = request.StandardDeviation,
                 Repeatability = request.Repeatability,
                 Notes = request.Notes,
                 Status = initialStatus,
-                CreatedById = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString())
+                CreatedById = createdById
             };
 
             _context.Results.Add(result);
@@ -157,9 +219,6 @@ public class ResultsController : ControllerBase
             var dto = new ResultDto(result) { CreatedBy = User.FindFirst("staffId")?.Value ?? string.Empty };
             return CreatedAtAction(nameof(Get), new { sampleId = result.SampleId }, dto);
         }
-        // AnalysisNumber is generated client-side from the trailing digits of
-        // Date.now(), which repeats every ~16.7 minutes — a real, if infrequent,
-        // collision risk. Called out separately so the user gets an actionable message.
         catch (DbUpdateException ex)
         {
             _logger.LogWarning(ex, "Result create failed due to a duplicate AnalysisNumber");
@@ -237,7 +296,10 @@ public class ResultsController : ControllerBase
         }
     }
 
-    public record CreateResultRequest(string SampleId, string AnalysisNumber, DateTimeOffset AnalysisDate, string AnalystName, string Method, string Equipment, decimal Moisture, decimal Al2O3, decimal SiO2, decimal Fe2O3, decimal TiO2, decimal Loi, decimal Cao, decimal Mgo, decimal Na2O, decimal K2O, decimal? P2O5, decimal? MnO, decimal? Cr2O3, decimal TotalOxides, decimal Asr, decimal Rr, bool Calibrated, decimal? StandardDeviation, string? Repeatability, string Notes, string? Status, List<string>? AdditionalSampleIds = null);
+    // AnalysisNumber, AnalystName, TotalOxides, Asr, and Rr are deliberately absent —
+    // all five are now allocated/computed server-side (see Create above) rather than
+    // trusted from the client.
+    public record CreateResultRequest(string SampleId, DateTimeOffset AnalysisDate, string Method, string Equipment, decimal Moisture, decimal Al2O3, decimal SiO2, decimal Fe2O3, decimal TiO2, decimal Loi, decimal Cao, decimal Mgo, decimal Na2O, decimal K2O, decimal? P2O5, decimal? MnO, decimal? Cr2O3, decimal? MinorOxides, bool Calibrated, decimal? StandardDeviation, string? Repeatability, string Notes, string? Status, List<string>? AdditionalSampleIds = null);
     public record UpdateResultStatusRequest(string Status, string? Comment);
 
     public class ResultDto
@@ -268,6 +330,7 @@ public class ResultsController : ControllerBase
             P2O5 = result.P2O5;
             MnO = result.MnO;
             Cr2O3 = result.Cr2O3;
+            MinorOxides = result.MinorOxides;
             TotalOxides = result.TotalOxides;
             Asr = result.Asr;
             Rr = result.Rr;
@@ -302,6 +365,7 @@ public class ResultsController : ControllerBase
         public decimal? P2O5 { get; set; }
         public decimal? MnO { get; set; }
         public decimal? Cr2O3 { get; set; }
+        public decimal? MinorOxides { get; set; }
         public decimal TotalOxides { get; set; }
         public decimal Asr { get; set; }
         public decimal Rr { get; set; }

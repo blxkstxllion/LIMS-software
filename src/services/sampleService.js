@@ -48,11 +48,18 @@ export async function fetchSamplesPaged({ search, status, priority, page = 1, pa
   };
 }
 
+// 200 is the server's hard clamp (SamplesController/ResultsController/CoasController)
+// — requesting it explicitly means dashboards, dropdowns, and reports see effectively
+// everything for any lab under that size, instead of silently truncating at the old
+// unspecified default of 25. True search-based pagination (loading only what a given
+// dropdown/filter actually needs) is the real long-term fix once a lab exceeds this.
+const MAX_PAGE_SIZE = 200;
+
 export async function fetchLimsData() {
   const [samples, results, coas] = await Promise.all([
-    request("/api/samples"),
-    request("/api/results"),
-    request("/api/coas"),
+    request(`/api/samples?pageSize=${MAX_PAGE_SIZE}`),
+    request(`/api/results?pageSize=${MAX_PAGE_SIZE}`),
+    request(`/api/coas?pageSize=${MAX_PAGE_SIZE}`),
   ]);
 
   return {
@@ -179,18 +186,3 @@ export async function updateCoaStatus(coaId, status) {
   return normalizeCoa(response);
 }
 
-export function generateAuditLogs() {
-  return [
-    {
-      id: 1,
-      timestamp: new Date().toISOString(),
-      user: "GBC-ADMIN-001",
-      userName: "Administrator",
-      action: "Login",
-      module: "Authentication",
-      recordId: "SYS-001",
-      details: "User signed in",
-      ipAddress: "127.0.0.1",
-    },
-  ];
-}

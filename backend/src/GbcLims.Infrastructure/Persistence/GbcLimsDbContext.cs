@@ -50,6 +50,7 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
             entity.Property(e => e.Fe2O3).HasPrecision(12, 3);
             entity.Property(e => e.TiO2).HasPrecision(12, 3);
             entity.Property(e => e.Loi).HasPrecision(12, 3);
+            entity.Property(e => e.MinorOxides).HasPrecision(12, 3);
             entity.Property(e => e.TotalOxides).HasPrecision(12, 3);
             entity.Property(e => e.Asr).HasPrecision(12, 3);
             entity.Property(e => e.Rr).HasPrecision(12, 3);
@@ -61,7 +62,20 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
         modelBuilder.Entity<Coa>(entity =>
         {
             entity.HasIndex(e => e.CoaNumber).IsUnique();
+            entity.Property(e => e.SnapshotAl2O3).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotSiO2).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotFe2O3).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotTiO2).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotLoi).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotTotalOxides).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotAsr).HasPrecision(12, 3);
+            entity.Property(e => e.SnapshotRr).HasPrecision(12, 3);
             entity.HasOne(e => e.Sample).WithMany().HasForeignKey(e => e.SampleId).OnDelete(DeleteBehavior.Cascade);
+            // Restrict, not Cascade/SetNull: the whole point of this FK (see 1.1 fix) is
+            // that a COA's source result must never become unlinkable.
+            entity.HasOne(e => e.Result).WithMany().HasForeignKey(e => e.ResultId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.ApprovedBy).WithMany().HasForeignKey(e => e.ApprovedById).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.IssuedBy).WithMany().HasForeignKey(e => e.IssuedById).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Attachment>(entity =>

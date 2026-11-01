@@ -58,6 +58,8 @@ public class SamplesController : ControllerBase
     {
         try
         {
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
             var query = _context.Samples.Include(s => s.CreatedBy).Where(s => !s.IsDeleted).AsQueryable();
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -121,6 +123,12 @@ public class SamplesController : ControllerBase
             var sample = new Sample
             {
                 Id = Guid.NewGuid(),
+                // Unlike AnalysisNumber/CoaNumber (internal LIMS document numbers,
+                // allocated server-side — see ResultsController/CoasController),
+                // SampleNumber is the physical sample's own existing tracking tag as
+                // written on it at intake. The lab needs to record *that* exact label,
+                // not an internally-invented one, so it's deliberately still client-
+                // supplied here.
                 SampleNumber = request.SampleNumber,
                 Origin = request.Origin,
                 SampleSource = request.SampleSource,
@@ -144,10 +152,11 @@ public class SamplesController : ControllerBase
             var dto = new SampleDto(sample) { CreatedBy = User.FindFirst("staffId")?.Value ?? string.Empty };
             return CreatedAtAction(nameof(GetById), new { id = sample.Id }, dto);
         }
-        // The frontend generates SampleNumber client-side from a 6-digit random suffix,
-        // so a collision — while unlikely per attempt — is a real possibility as the
-        // number of samples in a given year grows. Distinguished from other failures so
-        // the user gets an actionable message instead of a generic "something went wrong".
+        // SampleNumber is operator-entered (see the comment on the Sample construction
+        // above), so unlike AnalysisNumber/CoaNumber a collision here is a real data-
+        // entry conflict — e.g. two staff registering under the same physical tag
+        // number — not a generation scheme's flaw. Distinguished so the user gets an
+        // actionable message instead of a generic "something went wrong".
         catch (DbUpdateException ex)
         {
             _logger.LogWarning(ex, "Sample create failed due to a duplicate SampleNumber");
