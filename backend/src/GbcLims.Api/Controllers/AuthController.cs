@@ -17,17 +17,26 @@ namespace GbcLims.Api.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    // Never readable by JS (HttpOnly) and scoped to only the three endpoints that need
+    // it — the browser won't attach it to /api/samples, /api/results, etc. requests at
+    // all, narrowing exposure if any of this app's third-party frontend dependencies
+    // ever turned out to have an XSS bug.
+    private const string RefreshCookieName = "gbc_refresh_token";
+    private const string RefreshCookiePath = "/api/auth";
+
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly GbcLimsDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly IWebHostEnvironment _environment;
 
-    public AuthController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, GbcLimsDbContext context, IConfiguration configuration)
+    public AuthController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, GbcLimsDbContext context, IConfiguration configuration, IWebHostEnvironment environment)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _context = context;
         _configuration = configuration;
+        _environment = environment;
     }
 
     [HttpPost("login")]
@@ -52,14 +61,13 @@ public class AuthController : ControllerBase
         // A new row, not a replacement of some single stored token — logging in on a
         // second device no longer invalidates the first (each login/refresh gets its
         // own RefreshTokens row, so sessions coexist independently).
-        var refreshToken = await IssueRefreshTokenAsync(user.Id);
+        await IssueRefreshTokenCookieAsync(user.Id);
         user.LastLoginAt = DateTimeOffset.UtcNow;
         await _userManager.UpdateAsync(user);
 
         return Ok(new AuthResponse
         {
             AccessToken = token,
-            RefreshToken = refreshToken,
             ExpiresIn = 3600,
             User = new UserDto { Id = user.Id, StaffId = user.StaffId, FullName = user.FullName, Email = user.Email!, Role = user.Role }
         });
@@ -67,12 +75,16 @@ public class AuthController : ControllerBase
 
     [HttpPost("refresh")]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request)
+    public async Task<IActionResult> Refresh()
     {
-        var tokenHash = HashToken(request.RefreshToken);
+        var rawToken = Request.Cookies[RefreshCookieName];
+        if (string.IsNullOrEmpty(rawToken)) return Unauthorized(new { message = "Invalid refresh token" });
+
+        var tokenHash = HashToken(rawToken);
         var existing = await _context.RefreshTokens.Include(t => t.User).SingleOrDefaultAsync(t => t.TokenHash == tokenHash);
         if (existing is null || existing.RevokedAt is not null || existing.ExpiresAt <= DateTimeOffset.UtcNow || !existing.User.IsActive)
         {
+            Response.Cookies.Delete(RefreshCookieName, new CookieOptions { Path = RefreshCookiePath });
             return Unauthorized(new { message = "Invalid refresh token" });
         }
 
@@ -83,24 +95,26 @@ public class AuthController : ControllerBase
         // token is only ever usable once before the legitimate client's next refresh
         // makes the old value dead.
         existing.RevokedAt = DateTimeOffset.UtcNow;
-        var refreshToken = await IssueRefreshTokenAsync(user.Id);
+        await IssueRefreshTokenCookieAsync(user.Id);
 
-        return Ok(new AuthResponse { AccessToken = token, RefreshToken = refreshToken, ExpiresIn = 3600, User = new UserDto { Id = user.Id, StaffId = user.StaffId, FullName = user.FullName, Email = user.Email!, Role = user.Role } });
+        return Ok(new AuthResponse { AccessToken = token, ExpiresIn = 3600, User = new UserDto { Id = user.Id, StaffId = user.StaffId, FullName = user.FullName, Email = user.Email!, Role = user.Role } });
     }
 
-    // Revokes just the refresh token this client presents, not every session — logging
-    // out on one device shouldn't end another device's still-open session. The access
-    // token used to call this endpoint remains valid for the rest of its (short,
-    // 1-hour) lifetime regardless — an inherent limit of stateless JWTs without a full
-    // revocation list; the refresh token is the part that actually matters, since it's
-    // what would otherwise let a stolen token keep working for up to 7 days.
+    // Revokes just this device's refresh token (identified by its own cookie, which
+    // only this browser has), not every session — logging out on one device shouldn't
+    // end another device's still-open session. The access token used to call this
+    // endpoint remains valid for the rest of its (short, 1-hour) lifetime regardless —
+    // an inherent limit of stateless JWTs without a full revocation list; the refresh
+    // token is the part that actually matters, since it's what would otherwise let a
+    // stolen token keep working for up to 7 days.
     [HttpPost("logout")]
     [Authorize]
-    public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+    public async Task<IActionResult> Logout()
     {
-        if (!string.IsNullOrWhiteSpace(request.RefreshToken))
+        var rawToken = Request.Cookies[RefreshCookieName];
+        if (!string.IsNullOrEmpty(rawToken))
         {
-            var tokenHash = HashToken(request.RefreshToken);
+            var tokenHash = HashToken(rawToken);
             var existing = await _context.RefreshTokens.SingleOrDefaultAsync(t => t.TokenHash == tokenHash);
             if (existing is not null && existing.RevokedAt is null)
             {
@@ -109,22 +123,38 @@ public class AuthController : ControllerBase
             }
         }
 
+        Response.Cookies.Delete(RefreshCookieName, new CookieOptions { Path = RefreshCookiePath });
         return NoContent();
     }
 
-    private async Task<string> IssueRefreshTokenAsync(Guid userId)
+    private async Task IssueRefreshTokenCookieAsync(Guid userId)
     {
         var raw = GenerateRawRefreshToken();
+        var expiresAt = DateTimeOffset.UtcNow.AddDays(7);
         _context.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             TokenHash = HashToken(raw),
-            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            ExpiresAt = expiresAt,
             CreatedAt = DateTimeOffset.UtcNow
         });
         await _context.SaveChangesAsync();
-        return raw;
+
+        Response.Cookies.Append(RefreshCookieName, raw, new CookieOptions
+        {
+            HttpOnly = true,
+            // Secure cookies are never sent over plain HTTP — local dev (no TLS) would
+            // silently never receive this cookie back if this were hardcoded true.
+            Secure = !_environment.IsDevelopment(),
+            // Strict, not Lax: this app has no legitimate reason for the cookie to be
+            // sent on a cross-site request of any kind (no SSO redirects, no links
+            // into it from other sites), and Strict is what makes the refresh endpoint
+            // immune to CSRF without needing a separate anti-forgery token.
+            SameSite = SameSiteMode.Strict,
+            Expires = expiresAt,
+            Path = RefreshCookiePath
+        });
     }
 
     private string GenerateJwtToken(ApplicationUser user)
@@ -175,13 +205,10 @@ public class AuthController : ControllerBase
     }
 
     public record LoginRequest(string StaffId, string Password);
-    public record RefreshTokenRequest(string RefreshToken);
-    public record LogoutRequest(string? RefreshToken);
 
     public class AuthResponse
     {
         public string AccessToken { get; set; } = string.Empty;
-        public string RefreshToken { get; set; } = string.Empty;
         public int ExpiresIn { get; set; }
         public UserDto User { get; set; } = null!;
     }

@@ -134,7 +134,13 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
 
 var app = builder.Build();
 
-app.UseCors(policy => policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod());
+// AllowCredentials is required for the browser to send/receive the refresh-token
+// cookie (AuthController) on cross-origin requests — only relevant in local dev,
+// where the Vite dev server and the API run on different ports; in production the
+// frontend and API share one origin behind Caddy, so this is a no-op there. Requires
+// explicit origins (already the case via WithOrigins) — CORS forbids combining
+// AllowCredentials with a wildcard origin.
+app.UseCors(policy => policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials());
 
 if (app.Environment.IsDevelopment())
 {
