@@ -81,6 +81,7 @@ public class GbcLimsDbContext : IdentityDbContext<ApplicationUser, ApplicationRo
         modelBuilder.Entity<Attachment>(entity =>
         {
             entity.HasOne(e => e.Sample).WithMany(s => s.Attachments).HasForeignKey(e => e.SampleId).OnDelete(DeleteBehavior.Cascade).IsRequired(false);
+            entity.HasOne(e => e.UploadedByUser).WithMany().HasForeignKey(e => e.UploadedById).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<AuditLog>(entity =>

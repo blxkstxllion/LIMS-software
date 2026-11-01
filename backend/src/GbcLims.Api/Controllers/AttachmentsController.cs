@@ -107,6 +107,7 @@ public class AttachmentsController : ControllerBase
                 await request.File.CopyToAsync(stream);
             }
 
+            var uploaderId = Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var parsedUploaderId) ? parsedUploaderId : (Guid?)null;
             var attachment = new Attachment
             {
                 Id = Guid.NewGuid(),
@@ -118,14 +119,14 @@ public class AttachmentsController : ControllerBase
                 SizeInBytes = request.File.Length,
                 Group = string.IsNullOrWhiteSpace(request.Group) ? "General" : request.Group,
                 UploadedBy = CurrentUserDisplayName,
+                UploadedById = uploaderId,
                 UploadedAt = DateTimeOffset.UtcNow
             };
 
             _context.Attachments.Add(attachment);
-            await _context.SaveChangesAsync();
-            var uploaderId = Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var parsedUploaderId) ? parsedUploaderId : (Guid?)null;
             var uploadDetails = $"File {attachment.FileName} uploaded" + (sample is not null ? $" to Sample {sample.SampleNumber}" : "");
-            await _auditLogService.LogAsync("Create", "Attachment", nameof(Attachment), attachment.Id.ToString(), uploadDetails, uploaderId, User.Identity?.Name, sampleId);
+            _auditLogService.Log("Create", "Attachment", nameof(Attachment), attachment.Id.ToString(), uploadDetails, uploaderId, User.Identity?.Name, sampleId);
+            await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(Get), new AttachmentDto(attachment));
         }
         catch (Exception ex)
@@ -165,7 +166,10 @@ public class AttachmentsController : ControllerBase
             if (attachment is null) return NotFound();
 
             var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-            if (role != "admin" && attachment.UploadedBy != CurrentUserDisplayName)
+            var currentUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            // By user ID, not display name — two staff sharing a display name must
+            // never be able to delete each other's files.
+            if (role != "admin" && attachment.UploadedById != currentUserId)
             {
                 return StatusCode(403, new { message = "You do not have permission to delete this file." });
             }
@@ -174,8 +178,8 @@ public class AttachmentsController : ControllerBase
             if (System.IO.File.Exists(fullPath)) System.IO.File.Delete(fullPath);
 
             _context.Attachments.Remove(attachment);
+            _auditLogService.Log("Delete", "Attachment", nameof(Attachment), attachment.Id.ToString(), $"File {attachment.FileName} deleted", currentUserId, User.Identity?.Name, attachment.SampleId);
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Delete", "Attachment", nameof(Attachment), attachment.Id.ToString(), $"File {attachment.FileName} deleted", null, User.Identity?.Name, attachment.SampleId);
             return NoContent();
         }
         catch (Exception ex)

@@ -24,10 +24,10 @@ export async function createUser({ staffId, name, email, password, role, departm
   return toUiUser(created);
 }
 
-export async function updateUser(staffId, { name, email, role, department }) {
+export async function updateUser(staffId, { name, email, role, department, reason }) {
   const updated = await request(`/api/users/${encodeURIComponent(staffId)}`, {
     method: "PUT",
-    body: JSON.stringify({ fullName: name, email, role, department }),
+    body: JSON.stringify({ fullName: name, email, role, department, reason }),
   });
   return toUiUser(updated);
 }
@@ -73,6 +73,7 @@ export async function fetchAuditLogs({ sampleId } = {}) {
     module: log.module,
     recordId: log.recordId,
     details: log.details,
+    reason: log.reason,
     ipAddress: log.ipAddress,
   }));
 }

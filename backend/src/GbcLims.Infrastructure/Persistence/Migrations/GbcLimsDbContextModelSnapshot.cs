@@ -189,9 +189,14 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("UploadedById")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("SampleId");
+
+                    b.HasIndex("UploadedById");
 
                     b.ToTable("Attachments");
                 });
@@ -225,6 +230,15 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Module")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NewValues")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OldValues")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
                         .HasColumnType("text");
 
                     b.Property<Guid?>("SampleId")
@@ -778,7 +792,14 @@ namespace GbcLims.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SampleId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("GbcLims.Domain.Entities.ApplicationUser", "UploadedByUser")
+                        .WithMany()
+                        .HasForeignKey("UploadedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Sample");
+
+                    b.Navigation("UploadedByUser");
                 });
 
             modelBuilder.Entity("GbcLims.Domain.Entities.AuditLog", b =>

@@ -4,6 +4,7 @@ using GbcLims.Domain.Entities;
 using GbcLims.Domain.Enums;
 using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,12 +17,14 @@ public class ResultsController : ControllerBase
 {
     private readonly GbcLimsDbContext _context;
     private readonly AuditLogService _auditLogService;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILogger<ResultsController> _logger;
 
-    public ResultsController(GbcLimsDbContext context, AuditLogService auditLogService, ILogger<ResultsController> logger)
+    public ResultsController(GbcLimsDbContext context, AuditLogService auditLogService, UserManager<ApplicationUser> userManager, ILogger<ResultsController> logger)
     {
         _context = context;
         _auditLogService = auditLogService;
+        _userManager = userManager;
         _logger = logger;
     }
 
@@ -214,8 +217,8 @@ public class ResultsController : ControllerBase
             };
 
             _context.Results.Add(result);
+            _auditLogService.Log("Create", "Result", nameof(Result), result.Id.ToString(), "Result entered", result.CreatedById, User.Identity?.Name, result.SampleId, newValues: new { result.AnalysisNumber, result.Al2O3, result.SiO2, result.Fe2O3, result.TiO2, result.Loi, result.TotalOxides });
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Create", "Result", nameof(Result), result.Id.ToString(), "Result entered", result.CreatedById, User.Identity?.Name, result.SampleId);
             var dto = new ResultDto(result) { CreatedBy = User.FindFirst("staffId")?.Value ?? string.Empty };
             return CreatedAtAction(nameof(Get), new { sampleId = result.SampleId }, dto);
         }
@@ -247,13 +250,18 @@ public class ResultsController : ControllerBase
                 [ResultStatus.Draft] = new() { ResultStatus.Submitted },
                 [ResultStatus.Submitted] = new() { ResultStatus.Approved, ResultStatus.Rejected },
                 [ResultStatus.Approved] = new() { ResultStatus.Approved },
-                [ResultStatus.Rejected] = new() { ResultStatus.Rejected }
+                // Rejected -> Draft is the correction path: a rejected result is no
+                // longer a dead end — its creator can amend and resubmit it, with the
+                // correction reasoned and audited like any other edit.
+                [ResultStatus.Rejected] = new() { ResultStatus.Rejected, ResultStatus.Draft }
             };
             if (!allowedTransitions[result.Status].Contains(nextStatus)) return BadRequest(new { message = "Invalid status transition" });
 
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
             var isSelfSubmit = result.Status == ResultStatus.Draft && nextStatus == ResultStatus.Submitted;
+            var isCorrection = result.Status == ResultStatus.Rejected && nextStatus == ResultStatus.Draft;
+            var previousStatus = result.Status;
 
             if (isSelfSubmit)
             {
@@ -265,6 +273,18 @@ public class ResultsController : ControllerBase
                 }
                 result.Status = nextStatus;
             }
+            else if (isCorrection)
+            {
+                if (result.CreatedById != userId)
+                {
+                    return StatusCode(403, new { message = "Only the result's creator can amend a rejected result." });
+                }
+                if (string.IsNullOrWhiteSpace(request.Comment))
+                {
+                    return BadRequest(new { message = "A reason is required to amend a rejected result." });
+                }
+                result.Status = nextStatus;
+            }
             else
             {
                 // Approve/reject is a review decision: gated to approve-capable roles, and
@@ -273,20 +293,33 @@ public class ResultsController : ControllerBase
                 {
                     return StatusCode(403, new { message = "You do not have permission to update this result." });
                 }
-                // Admin is exempt from the self-approval block below — every other
-                // approve-capable role still can't review their own submission.
-                if (result.CreatedById == userId && role != "admin")
+                // No exemption for admin — segregation of duties applies to every
+                // approve-capable role equally, with no one able to review their own
+                // submission regardless of privilege level.
+                if (result.CreatedById == userId)
                 {
                     return StatusCode(403, new { message = "You cannot approve or reject a result you submitted yourself." });
                 }
+
+                // E-signature: re-entering the current password at the moment of
+                // approval/rejection, not just relying on an already-open session, is
+                // what makes this attributable as a deliberate signing act rather than
+                // "whoever happened to be logged in."
+                var currentUser = await _userManager.FindByIdAsync(userId.ToString());
+                if (currentUser is null || string.IsNullOrWhiteSpace(request.Password) || !await _userManager.CheckPasswordAsync(currentUser, request.Password))
+                {
+                    return StatusCode(401, new { message = "Incorrect password. Re-enter your password to confirm this decision." });
+                }
+
                 result.Status = nextStatus;
                 result.ApprovalComment = request.Comment;
                 result.ApprovedById = userId;
             }
 
             result.UpdatedAt = DateTimeOffset.UtcNow;
+            var statusMessage = $"Result status changed to {nextStatus}";
+            _auditLogService.Log("Update", "Result", nameof(Result), result.Id.ToString(), statusMessage, userId, User.Identity?.Name, result.SampleId, request.Comment, new { Status = previousStatus.ToString() }, new { Status = nextStatus.ToString() });
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Update", "Result", nameof(Result), result.Id.ToString(), $"Result status changed to {nextStatus}", userId, User.Identity?.Name, result.SampleId);
             return Ok(new ResultDto(result));
         }
         catch (Exception ex)
@@ -300,7 +333,7 @@ public class ResultsController : ControllerBase
     // all five are now allocated/computed server-side (see Create above) rather than
     // trusted from the client.
     public record CreateResultRequest(string SampleId, DateTimeOffset AnalysisDate, string Method, string Equipment, decimal Moisture, decimal Al2O3, decimal SiO2, decimal Fe2O3, decimal TiO2, decimal Loi, decimal Cao, decimal Mgo, decimal Na2O, decimal K2O, decimal? P2O5, decimal? MnO, decimal? Cr2O3, decimal? MinorOxides, bool Calibrated, decimal? StandardDeviation, string? Repeatability, string Notes, string? Status, List<string>? AdditionalSampleIds = null);
-    public record UpdateResultStatusRequest(string Status, string? Comment);
+    public record UpdateResultStatusRequest(string Status, string? Comment, string? Password = null);
 
     public class ResultDto
     {

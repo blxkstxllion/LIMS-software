@@ -13,6 +13,11 @@ public class Attachment
     public string ContentType { get; set; } = string.Empty;
     public long SizeInBytes { get; set; }
     public string Group { get; set; } = string.Empty;
+    // UploadedBy stays a display-name string for the UI; UploadedById is what delete
+    // authorization actually checks (AttachmentsController.Delete) — two staff sharing
+    // a display name must never be able to delete each other's files.
     public string UploadedBy { get; set; } = string.Empty;
+    public Guid? UploadedById { get; set; }
+    public ApplicationUser? UploadedByUser { get; set; }
     public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
 }

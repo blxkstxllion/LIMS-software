@@ -106,6 +106,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
   const [selected, setSelected] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(null);
+  const [editReason, setEditReason] = useState("");
   const [pagedSamples, setPagedSamples] = useState([]);
   const [pagedTotal, setPagedTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -169,13 +170,14 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
 
   const handleSaveEdit = async () => {
     if (!editData) return;
+    if (!editReason) { showToast("Enter a reason for this edit.", "error"); return; }
     try {
       // Status moves through its own transition-checked endpoint; only send it if it
       // actually changed, since re-sending an unchanged status can be rejected as an
       // invalid self-transition for states that don't allow looping (most of them).
       const original = pagedSamples.find((s) => s.id === editData.id) || selected;
       if (original && original.status !== editData.status) {
-        await onSampleStatusChanged(editData.id, editData.status);
+        await onSampleStatusChanged(editData.id, editData.status, editReason);
       }
       await onSampleUpdated(editData.id, {
         location: editData.location,
@@ -184,9 +186,10 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
         assignedTo: editData.assignedTo || "",
         batchNumber: editData.batchNumber || "",
         notes: editData.notes || "",
+        reason: editReason,
       });
       showToast("Sample updated successfully.", "success");
-      setEditMode(false); setSelected(editData);
+      setEditMode(false); setSelected(editData); setEditReason("");
       loadPage();
     } catch (error) {
       showToast(error.message || "Unable to update sample.", "error");
@@ -234,7 +237,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
                   <td style={{ padding:"10px 12px" }}>
                     <div style={{ display:"flex", gap:6 }}>
                       <button onClick={()=>setSelected(s)} style={{ padding:"3px 8px", background:"#eff6ff", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e3a8a", fontWeight:600 }}>View</button>
-                      {canEdit(s) && <button onClick={()=>{setEditData({...s});setSelected(s);setEditMode(true);}} style={{ padding:"3px 8px", background:"#f0fdf4", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#166534", fontWeight:600 }}>Edit</button>}
+                      {canEdit(s) && <button onClick={()=>{setEditData({...s});setSelected(s);setEditMode(true);setEditReason("");}} style={{ padding:"3px 8px", background:"#f0fdf4", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#166534", fontWeight:600 }}>Edit</button>}
                       {canDelete(s) && <button onClick={()=>handleDelete(s)} style={{ padding:"3px 8px", background:"#fee2e2", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#991b1b", fontWeight:600 }}>Del</button>}
                     </div>
                   </td>
@@ -275,7 +278,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
               <div style={{ maxHeight:180, overflowY:"auto", border:"1px solid #f3f4f6", borderRadius:8 }}>
                 {history.map((h)=>(
                   <div key={h.id} style={{ padding:"8px 12px", borderBottom:"1px solid #f3f4f6", fontSize:12 }}>
-                    <div style={{ color:"#111827" }}>{h.details}</div>
+                    <div style={{ color:"#111827" }}>{h.details}{h.reason && <span style={{ color:"#6b7280" }}> — {h.reason}</span>}</div>
                     <div style={{ color:"#9ca3af", marginTop:2 }}>{h.userName} · {formatDate(h.timestamp)}</div>
                   </div>
                 ))}
@@ -283,7 +286,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
             )}
           </div>
           <div style={{ display:"flex", gap:12, marginTop:20 }}>
-            {canEdit(selected) && <Button onClick={()=>{setEditData({...selected});setEditMode(true);}} variant="ghost">✏️ Edit Sample</Button>}
+            {canEdit(selected) && <Button onClick={()=>{setEditData({...selected});setEditMode(true);setEditReason("");}} variant="ghost">✏️ Edit Sample</Button>}
             {canDelete(selected) && <Button onClick={()=>handleDelete(selected)} variant="danger">🗑 Delete</Button>}
             <Button variant="secondary" onClick={()=>setSelected(null)}>Close</Button>
           </div>
@@ -300,6 +303,7 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
             <Input label="Batch Number" value={editData.batchNumber} onChange={(v)=>setEditData((p)=>({...p,batchNumber:v}))} />
           </div>
           <Textarea label="Notes" value={editData.notes} onChange={(v)=>setEditData((p)=>({...p,notes:v}))} />
+          <Textarea label="Reason for This Edit" value={editReason} onChange={setEditReason} placeholder="Why is this sample being changed?" rows={2} required />
           <div style={{ display:"flex", gap:12, marginTop:8 }}>
             <Button onClick={handleSaveEdit} variant="success">💾 Save Changes</Button>
             <Button variant="secondary" onClick={()=>setEditMode(false)}>Cancel</Button>
@@ -409,6 +413,9 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
   const [viewList, setViewList] = useState(!canCreate || canApprove);
   const [approveModal, setApproveModal] = useState(null);
   const [approveComment, setApproveComment] = useState("");
+  const [approvePassword, setApprovePassword] = useState("");
+  const [correctionModal, setCorrectionModal] = useState(null);
+  const [correctionReason, setCorrectionReason] = useState("");
 
   const set = (k,v) => setForm((p)=>({...p,[k]:v}));
   const toggleSampleId = (id) => setForm((p) => ({ ...p, sampleIds: p.sampleIds.includes(id) ? p.sampleIds.filter((x) => x !== id) : [...p.sampleIds, id] }));
@@ -473,13 +480,28 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
   };
 
   const handleApprove = async (r, decision) => {
+    if (!approvePassword) { showToast("Re-enter your password to confirm this decision.", "error"); return; }
     try {
-      const updated = await onResultStatusChanged(r.id, decision === "approve" ? "Approved" : "Rejected", approveComment);
+      const updated = await onResultStatusChanged(r.id, decision === "approve" ? "Approved" : "Rejected", approveComment, approvePassword);
       setResults((prev) => prev.map((x) => x.id===r.id ? updated : x));
       showToast(`Result ${decision === "approve" ? "approved" : "rejected"}.`, decision === "approve" ? "success" : "warning");
-      setApproveModal(null); setApproveComment("");
+      setApproveModal(null); setApproveComment(""); setApprovePassword("");
     } catch (error) {
       showToast(error.message || "Unable to update result.", "error");
+    }
+  };
+
+  // Rejected is no longer a dead end — the result's own creator can amend and
+  // resubmit it, with the correction's reason recorded in the audit trail.
+  const handleCorrection = async (r) => {
+    if (!correctionReason) { showToast("Enter a reason for this correction.", "error"); return; }
+    try {
+      const updated = await onResultStatusChanged(r.id, "Draft", correctionReason);
+      setResults((prev) => prev.map((x) => x.id===r.id ? updated : x));
+      showToast("Result moved back to Draft for correction.", "success");
+      setCorrectionModal(null); setCorrectionReason("");
+    } catch (error) {
+      showToast(error.message || "Unable to amend result.", "error");
     }
   };
 
@@ -500,7 +522,9 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         {canCreate && <Button onClick={()=>setViewList(false)} variant="primary">+ New Result</Button>}
       </div>
       {canApprove && (() => {
-        const pendingApproval = results.filter((r) => r.status === "Submitted" && (r.createdBy !== user.staffId || user.role === "admin"));
+        // No exemption for admin — matches the backend (ResultsController), which
+        // blocks self-approval for every role including admin.
+        const pendingApproval = results.filter((r) => r.status === "Submitted" && r.createdBy !== user.staffId);
         return (
           <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #fde68a", marginBottom:20, overflow:"hidden" }}>
             <div style={{ padding:"14px 18px", background:"#fffbeb", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: pendingApproval.length ? "1px solid #fef3c7" : "none" }}>
@@ -542,9 +566,12 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
                     <button onClick={()=>handleSubmitDraft(r)} style={{ padding:"3px 10px", background:"#dbeafe", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e40af", fontWeight:600 }}>Submit</button>
                   )}
                   {PERMISSIONS[user.role].approve && r.status === "Submitted" && (
-                    r.createdBy === user.staffId && user.role !== "admin"
+                    r.createdBy === user.staffId
                       ? <span style={{ fontSize:11, color:"#9ca3af" }}>Awaiting reviewer</span>
                       : <button onClick={()=>setApproveModal(r)} style={{ padding:"3px 10px", background:"#dcfce7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#166534", fontWeight:600 }}>Approve</button>
+                  )}
+                  {r.status === "Rejected" && r.createdBy === user.staffId && (
+                    <button onClick={()=>setCorrectionModal(r)} style={{ padding:"3px 10px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>Amend &amp; Resubmit</button>
                   )}
                 </td>
               </tr>
@@ -561,10 +588,21 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
             </div>
           </div>
           <Textarea label="Approval Comments" value={approveComment} onChange={setApproveComment} placeholder="Comments (optional)" rows={2} />
+          <Input label="Re-enter Your Password to Confirm" type="password" value={approvePassword} onChange={setApprovePassword} required />
           <div style={{ display:"flex", gap:10 }}>
             <Button onClick={()=>handleApprove(approveModal,"approve")} variant="success">✓ Approve</Button>
             <Button onClick={()=>handleApprove(approveModal,"reject")} variant="danger">✗ Reject</Button>
-            <Button onClick={()=>setApproveModal(null)} variant="secondary">Cancel</Button>
+            <Button onClick={()=>{setApproveModal(null);setApprovePassword("");}} variant="secondary">Cancel</Button>
+          </div>
+        </Modal>
+      )}
+      {correctionModal && (
+        <Modal title={`Amend Result: ${correctionModal.id}`} onClose={()=>setCorrectionModal(null)}>
+          <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>This moves the result back to Draft so you can correct and resubmit it. Explain what's being corrected and why.</div>
+          <Textarea label="Reason for Correction" value={correctionReason} onChange={setCorrectionReason} placeholder="e.g. Re-ran SiO2 after instrument recalibration" rows={3} required />
+          <div style={{ display:"flex", gap:10 }}>
+            <Button onClick={()=>handleCorrection(correctionModal)} variant="warning">Move to Draft</Button>
+            <Button onClick={()=>setCorrectionModal(null)} variant="secondary">Cancel</Button>
           </div>
         </Modal>
       )}
@@ -770,7 +808,7 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
       </div>
       <div className="lims-grid-2" style={{ gap:20 }}>
         <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Analyzed By:</strong> {coa.result?.analystName||user.name}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.result?.analysisDate)}</div></div>
-        <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Approved By:</strong> {coa.generatedBy}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.generatedDate)}</div></div>
+        <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Approved By:</strong> {coa.approvedBy||"Pending approval"}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {coa.approvedAt?formatDate(coa.approvedAt):"—"}</div></div>
       </div>
     </div>
   );
@@ -791,12 +829,19 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
   };
 
-  const handleCoaStatusChange = async (status, successMessage) => {
+  // E-signature: a certificate changing status (Approved, then Issued — the point it
+  // actually leaves the building) requires re-entering the current password, same as
+  // Result approval. signModal holds which transition is pending confirmation.
+  const [signModal, setSignModal] = useState(null);
+  const [signPassword, setSignPassword] = useState("");
+
+  const handleCoaStatusChange = async (status, successMessage, password) => {
     try {
-      const updated = await onCoaStatusChanged(preview.id, status);
+      const updated = await onCoaStatusChanged(preview.id, status, password);
       setCoas((prev) => prev.map((c) => (c.id === preview.id ? { ...c, ...updated } : c)));
       setPreview((prev) => ({ ...prev, ...updated }));
       showToast(successMessage, "success");
+      setSignModal(null); setSignPassword("");
     } catch (error) {
       showToast(error.message || "Unable to update COA status.", "error");
     }
@@ -808,10 +853,20 @@ export function COAGenerator({ user, samples, results, coas, setCoas, showToast,
         <Button onClick={()=>{setPreview(null);setViewList(true);}} variant="secondary">← Back</Button>
         <Button onClick={exportCOAToPDF} variant="primary">🖨 Export PDF</Button>
         <Button onClick={exportCOAToWord} variant="ghost">⬇ Export Word</Button>
-        {preview.status === "Draft" && <Button onClick={()=>handleCoaStatusChange("Approved", "COA approved.")} variant="success">✅ Approve COA</Button>}
-        {preview.status === "Approved" && <Button onClick={()=>handleCoaStatusChange("Issued", "COA marked as issued.")} variant="warning">📤 Mark as Issued</Button>}
+        {preview.status === "Draft" && <Button onClick={()=>setSignModal("Approved")} variant="success">✅ Approve COA</Button>}
+        {preview.status === "Approved" && <Button onClick={()=>setSignModal("Issued")} variant="warning">📤 Mark as Issued</Button>}
       </div>
       <div ref={docRef} style={{ border:"1.5px solid #e5e7eb", borderRadius:12, overflow:"hidden" }}><COADocument coa={preview} /></div>
+      {signModal && (
+        <Modal title={signModal === "Approved" ? "Approve COA" : "Mark COA as Issued"} onClose={()=>{setSignModal(null);setSignPassword("");}}>
+          <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>{signModal === "Approved" ? "Approving this certificate confirms it's ready to be issued." : "Marking this certificate as Issued confirms it has been sent to the client."}</div>
+          <Input label="Re-enter Your Password to Confirm" type="password" value={signPassword} onChange={setSignPassword} required />
+          <div style={{ display:"flex", gap:10 }}>
+            <Button onClick={()=>handleCoaStatusChange(signModal, signModal === "Approved" ? "COA approved." : "COA marked as issued.", signPassword)} variant={signModal === "Approved" ? "success" : "warning"}>Confirm</Button>
+            <Button onClick={()=>{setSignModal(null);setSignPassword("");}} variant="secondary">Cancel</Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 
@@ -1294,6 +1349,7 @@ export function AdminPanel({ user, showToast }) {
   };
 
   const saveEdit = async () => {
+    if (!editUser.reason) { showToast("Enter a reason for this edit.", "error"); return; }
     try {
       const updated = await updateUser(editUser.staffId, editUser);
       setUsers((p)=>p.map((u)=>u.staffId===updated.staffId?updated:u));
@@ -1433,6 +1489,7 @@ export function AdminPanel({ user, showToast }) {
             <Select label="Role" value={editUser.role} onChange={(v)=>setEditUser((p)=>({...p,role:v}))} options={Object.entries(ROLE_LABELS).map(([k,l])=>({value:k,label:l}))} />
             <Input label="Department" value={editUser.department} onChange={(v)=>setEditUser((p)=>({...p,department:v}))} />
           </div>
+          <Textarea label="Reason for This Edit" value={editUser.reason||""} onChange={(v)=>setEditUser((p)=>({...p,reason:v}))} placeholder="Why is this user's record being changed?" rows={2} required />
           <div style={{ display:"flex", gap:12 }}>
             <Button onClick={saveEdit} variant="success">💾 Save Changes</Button>
             <Button onClick={()=>setEditUser(null)} variant="secondary">Cancel</Button>

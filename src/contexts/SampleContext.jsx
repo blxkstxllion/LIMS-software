@@ -79,14 +79,14 @@ export function SampleProvider({ children }) {
     setSamples((prev) => prev.filter((sample) => sample.id !== sampleId));
   }, []);
 
-  const onResultStatusChanged = useCallback(async (resultId, status, comment) => {
-    const updated = await updateResultStatus(resultId, status, comment);
+  const onResultStatusChanged = useCallback(async (resultId, status, comment, password) => {
+    const updated = await updateResultStatus(resultId, status, comment, password);
     setResults((prev) => prev.map((result) => (result.id === resultId ? updated : result)));
     return updated;
   }, []);
 
-  const onCoaStatusChanged = useCallback(async (coaId, status) => {
-    const updated = await updateCoaStatus(coaId, status);
+  const onCoaStatusChanged = useCallback(async (coaId, status, password) => {
+    const updated = await updateCoaStatus(coaId, status, password);
     setCoas((prev) => prev.map((coa) => (coa.id === coaId ? { ...coa, ...updated } : coa)));
     return updated;
   }, []);

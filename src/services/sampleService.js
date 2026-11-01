@@ -158,10 +158,10 @@ export async function deleteSample(sampleId) {
 // initial list load both normalize correctly — reports and tables built from a result
 // after its first status change would show 0.00 for every oxide except LOI (whose
 // property name has no casing mismatch to begin with) and a GUID instead of its ID.
-export async function updateResultStatus(resultId, status, comment) {
+export async function updateResultStatus(resultId, status, comment, password) {
   const response = await request(`/api/results/${resultId}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status, comment }),
+    body: JSON.stringify({ status, comment, password }),
   });
   return {
     ...response,
@@ -178,10 +178,10 @@ export async function updateResultStatus(resultId, status, comment) {
   };
 }
 
-export async function updateCoaStatus(coaId, status) {
+export async function updateCoaStatus(coaId, status, password) {
   const response = await request(`/api/coas/${coaId}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, password }),
   });
   return normalizeCoa(response);
 }

@@ -91,8 +91,8 @@ public class QcSamplesController : ControllerBase
             };
 
             _context.QcSamples.Add(qcSample);
+            _auditLogService.Log("Create", "QcSample", nameof(QcSample), qcSample.Id.ToString(), $"QC sample {qcSample.QcNumber} recorded, result: {status}", userId, User.Identity?.Name, referenceSampleId, newValues: new { qcSample.QcNumber, qcSample.ExpectedAl2O3, qcSample.ActualAl2O3, qcSample.Variance, qcSample.Status });
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Create", "QcSample", nameof(QcSample), qcSample.Id.ToString(), $"QC sample {qcSample.QcNumber} recorded, result: {status}", userId, User.Identity?.Name, referenceSampleId);
 
             await _context.Entry(qcSample).Reference(q => q.CreatedBy).LoadAsync();
             return CreatedAtAction(nameof(Get), new QcSampleDto(qcSample));

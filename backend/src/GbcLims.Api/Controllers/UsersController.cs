@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GbcLims.Api.Controllers;
 
@@ -25,6 +26,15 @@ public class UsersController : ControllerBase
         _auditLogService = auditLogService;
         _logger = logger;
     }
+
+    // UserManager.CreateAsync/UpdateAsync/DeleteAsync each call SaveChanges
+    // internally, separately from the audit row AuditLogService.Log() stages for the
+    // same DbContext instance — wrapping both in one explicit transaction is what
+    // makes the two actually atomic, rather than two independent writes where a crash
+    // between them leaves a change with no audit record. The InMemory provider (local
+    // dev without Postgres) has no real transactions, so this is a no-op there.
+    private async Task<IDbContextTransaction?> BeginAuditedTransactionAsync()
+        => _context.Database.IsRelational() ? await _context.Database.BeginTransactionAsync() : null;
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<UserDto>>> Get()
@@ -62,6 +72,7 @@ public class UsersController : ControllerBase
                 IsActive = true
             };
 
+            await using var transaction = await BeginAuditedTransactionAsync();
             var createResult = await _userManager.CreateAsync(user, request.Password);
             if (!createResult.Succeeded)
             {
@@ -69,7 +80,9 @@ public class UsersController : ControllerBase
             }
 
             await _userManager.AddToRoleAsync(user, request.Role);
-            await _auditLogService.LogAsync("Create", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} created", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name);
+            _auditLogService.Log("Create", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} created", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, newValues: new { user.StaffId, user.FullName, user.Email, user.Role, user.Department });
+            await _context.SaveChangesAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return CreatedAtAction(nameof(Get), new UserDto(user));
         }
         catch (Exception ex)
@@ -87,6 +100,14 @@ public class UsersController : ControllerBase
             var user = await _userManager.Users.SingleOrDefaultAsync(u => u.StaffId == staffId);
             if (user is null) return NotFound();
 
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                return BadRequest(new { message = "A reason is required to update a user's details." });
+            }
+
+            var oldValues = new { user.FullName, user.Email, user.Role, user.Department };
+
+            await using var transaction = await BeginAuditedTransactionAsync();
             if (user.Role != request.Role)
             {
                 await _userManager.RemoveFromRoleAsync(user, user.Role);
@@ -99,7 +120,11 @@ public class UsersController : ControllerBase
             user.Role = request.Role;
             user.UpdatedAt = DateTimeOffset.UtcNow;
             await _userManager.UpdateAsync(user);
-            await _auditLogService.LogAsync("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} updated", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name);
+
+            var newValues = new { user.FullName, user.Email, user.Role, user.Department };
+            _auditLogService.Log("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} updated", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, reason: request.Reason, oldValues: oldValues, newValues: newValues);
+            await _context.SaveChangesAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return Ok(new UserDto(user));
         }
         catch (Exception ex)
@@ -118,6 +143,7 @@ public class UsersController : ControllerBase
             if (user is null) return NotFound();
 
             var isActive = request.Status == "Active";
+            var wasActive = user.IsActive;
             user.IsActive = isActive;
             user.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -132,8 +158,11 @@ public class UsersController : ControllerBase
                 user.RefreshTokenExpiryTime = null;
             }
 
+            await using var transaction = await BeginAuditedTransactionAsync();
             await _userManager.UpdateAsync(user);
-            await _auditLogService.LogAsync("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} {(isActive ? "activated" : "suspended")}", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name);
+            _auditLogService.Log("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} {(isActive ? "activated" : "suspended")}", Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString()), User.Identity?.Name, oldValues: new { IsActive = wasActive }, newValues: new { IsActive = isActive });
+            await _context.SaveChangesAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return Ok(new UserDto(user));
         }
         catch (Exception ex)
@@ -156,6 +185,7 @@ public class UsersController : ControllerBase
             var user = await _userManager.Users.SingleOrDefaultAsync(u => u.StaffId == staffId);
             if (user is null) return NotFound();
 
+            await using var transaction = await BeginAuditedTransactionAsync();
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
             if (!result.Succeeded)
@@ -169,7 +199,9 @@ public class UsersController : ControllerBase
             await _userManager.UpdateAsync(user);
 
             var currentUserId = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
-            await _auditLogService.LogAsync("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"Password reset for user {user.StaffId}", currentUserId, User.Identity?.Name);
+            _auditLogService.Log("Update", "User", nameof(ApplicationUser), user.Id.ToString(), $"Password reset for user {user.StaffId}", currentUserId, User.Identity?.Name);
+            await _context.SaveChangesAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return NoContent();
         }
         catch (Exception ex)
@@ -205,13 +237,16 @@ public class UsersController : ControllerBase
                 return BadRequest(new { message = "This user has samples, results, or QC records on file and can't be deleted — suspend them instead to preserve the audit trail." });
             }
 
+            await using var transaction = await BeginAuditedTransactionAsync();
             var deleteResult = await _userManager.DeleteAsync(user);
             if (!deleteResult.Succeeded)
             {
                 return BadRequest(new { message = string.Join(" ", deleteResult.Errors.Select(e => e.Description)) });
             }
 
-            await _auditLogService.LogAsync("Delete", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} deleted", currentUserId, User.Identity?.Name);
+            _auditLogService.Log("Delete", "User", nameof(ApplicationUser), user.Id.ToString(), $"User {user.StaffId} deleted", currentUserId, User.Identity?.Name);
+            await _context.SaveChangesAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return NoContent();
         }
         catch (Exception ex)
@@ -222,7 +257,7 @@ public class UsersController : ControllerBase
     }
 
     public record CreateUserRequest(string StaffId, string FullName, string Email, string Password, string Role, string Department);
-    public record UpdateUserRequest(string FullName, string Email, string Role, string Department);
+    public record UpdateUserRequest(string FullName, string Email, string Role, string Department, string Reason);
     public record UpdateUserStatusRequest(string Status);
     public record ResetPasswordRequest(string NewPassword);
 

@@ -4,6 +4,7 @@ using GbcLims.Domain.Entities;
 using GbcLims.Domain.Enums;
 using GbcLims.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,12 +17,14 @@ public class CoasController : ControllerBase
 {
     private readonly GbcLimsDbContext _context;
     private readonly AuditLogService _auditLogService;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly ILogger<CoasController> _logger;
 
-    public CoasController(GbcLimsDbContext context, AuditLogService auditLogService, ILogger<CoasController> logger)
+    public CoasController(GbcLimsDbContext context, AuditLogService auditLogService, UserManager<ApplicationUser> userManager, ILogger<CoasController> logger)
     {
         _context = context;
         _auditLogService = auditLogService;
+        _userManager = userManager;
         _logger = logger;
     }
 
@@ -197,8 +200,8 @@ public class CoasController : ControllerBase
             };
 
             _context.Coas.Add(coa);
+            _auditLogService.Log("Create", "CoA", nameof(Coa), coa.Id.ToString(), $"COA generated from result {result.AnalysisNumber}", generatedById, User.Identity?.Name, sample.Id, newValues: new { coa.CoaNumber, coa.ResultId, coa.ClientName });
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Create", "CoA", nameof(Coa), coa.Id.ToString(), $"COA generated from result {result.AnalysisNumber}", generatedById, User.Identity?.Name, sample.Id);
             return CreatedAtAction(nameof(Get), new { sampleId = sample.Id }, BuildCoaDto(coa));
         }
         catch (Exception ex)
@@ -227,6 +230,17 @@ public class CoasController : ControllerBase
             }
 
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            var previousStatus = coa.Status;
+
+            // E-signature: both Approve and Issue re-check the current password at the
+            // moment of the decision — a certificate leaving the building is exactly
+            // the kind of act that needs to be attributable to a deliberate signing,
+            // not just "whoever had an open session."
+            var currentUser = await _userManager.FindByIdAsync(userId.ToString());
+            if (currentUser is null || string.IsNullOrWhiteSpace(request.Password) || !await _userManager.CheckPasswordAsync(currentUser, request.Password))
+            {
+                return StatusCode(401, new { message = "Incorrect password. Re-enter your password to confirm this decision." });
+            }
 
             if (string.Equals(nextStatus, "Approved", StringComparison.OrdinalIgnoreCase))
             {
@@ -248,8 +262,8 @@ public class CoasController : ControllerBase
 
             coa.Status = nextStatus;
             coa.UpdatedAt = DateTimeOffset.UtcNow;
+            _auditLogService.Log("Update", "CoA", nameof(Coa), coa.Id.ToString(), $"COA status changed to {nextStatus}", userId, User.Identity?.Name, coa.SampleId, oldValues: new { Status = previousStatus }, newValues: new { Status = nextStatus });
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Update", "CoA", nameof(Coa), coa.Id.ToString(), $"COA status changed to {nextStatus}", userId, User.Identity?.Name, coa.SampleId);
 
             // Re-resolve so the newly-set ApprovedBy/IssuedBy navigation properties are
             // loaded for the response DTO (the in-memory `coa` instance only has the Ids).
@@ -264,7 +278,7 @@ public class CoasController : ControllerBase
     }
 
     public record CreateCoaRequest(string SampleId, string ResultId, string ClientName, string? ClientAddress, string? ClientContact, bool IncludeResults, bool IncludeMethodology, bool IncludeQcData, string? Remarks, DateTimeOffset IssueDate);
-    public record UpdateCoaStatusRequest(string Status);
+    public record UpdateCoaStatusRequest(string Status, string? Password = null);
 
     public class CoaDto
     {

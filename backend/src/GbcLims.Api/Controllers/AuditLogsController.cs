@@ -57,6 +57,7 @@ public class AuditLogsController : ControllerBase
                 Module = l.Module,
                 RecordId = l.EntityId ?? string.Empty,
                 Details = l.Details,
+                Reason = l.Reason,
                 IpAddress = l.IpAddress ?? string.Empty
             }));
         }
@@ -76,6 +77,7 @@ public class AuditLogsController : ControllerBase
         public string Module { get; set; } = string.Empty;
         public string RecordId { get; set; } = string.Empty;
         public string Details { get; set; } = string.Empty;
+        public string? Reason { get; set; }
         public string IpAddress { get; set; } = string.Empty;
     }
 }

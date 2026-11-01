@@ -147,8 +147,8 @@ public class SamplesController : ControllerBase
             };
 
             _context.Samples.Add(sample);
+            _auditLogService.Log("Create", "Sample", nameof(Sample), sample.Id.ToString(), "Sample registered", sample.CreatedById, User.Identity?.Name, sample.Id, newValues: new { sample.SampleNumber, sample.Origin, sample.SampleSource, sample.Location, sample.Quantity, sample.Tonnage, sample.Priority });
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Create", "Sample", nameof(Sample), sample.Id.ToString(), "Sample registered", sample.CreatedById, User.Identity?.Name, sample.Id);
             var dto = new SampleDto(sample) { CreatedBy = User.FindFirst("staffId")?.Value ?? string.Empty };
             return CreatedAtAction(nameof(GetById), new { id = sample.Id }, dto);
         }
@@ -192,6 +192,13 @@ public class SamplesController : ControllerBase
                 return StatusCode(403, new { message = "You do not have permission to update this sample." });
             }
 
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                return BadRequest(new { message = "A reason is required to update a sample's details." });
+            }
+
+            var oldValues = new { sample.Location, sample.Quantity, sample.Priority, sample.AssignedTo, sample.BatchNumber, sample.Notes };
+
             sample.Location = request.Location;
             sample.Quantity = request.Quantity;
             sample.Priority = request.Priority;
@@ -199,8 +206,10 @@ public class SamplesController : ControllerBase
             sample.BatchNumber = request.BatchNumber;
             sample.Notes = request.Notes;
             sample.UpdatedAt = DateTimeOffset.UtcNow;
+
+            var newValues = new { sample.Location, sample.Quantity, sample.Priority, sample.AssignedTo, sample.BatchNumber, sample.Notes };
+            _auditLogService.Log("Update", "Sample", nameof(Sample), sample.Id.ToString(), "Sample details updated", userId, User.Identity?.Name, sample.Id, request.Reason, oldValues, newValues);
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Update", "Sample", nameof(Sample), sample.Id.ToString(), "Sample details updated", userId, User.Identity?.Name, sample.Id);
             return Ok(new SampleDto(sample));
         }
         catch (Exception ex)
@@ -246,12 +255,13 @@ public class SamplesController : ControllerBase
 
             if (!allowedTransitions[sample.Status].Contains(nextStatus)) return BadRequest(new { message = "Invalid status transition" });
 
+            var previousStatus = sample.Status;
             sample.Status = nextStatus;
             sample.UpdatedAt = DateTimeOffset.UtcNow;
-            await _context.SaveChangesAsync();
             var statusMessage = $"Sample status changed to {FormatSampleStatus(nextStatus)}";
             if (!string.IsNullOrWhiteSpace(request.Comment)) statusMessage += $": {request.Comment}";
-            await _auditLogService.LogAsync("Update", "Sample", nameof(Sample), sample.Id.ToString(), statusMessage, userId, User.Identity?.Name, sample.Id);
+            _auditLogService.Log("Update", "Sample", nameof(Sample), sample.Id.ToString(), statusMessage, userId, User.Identity?.Name, sample.Id, request.Comment, new { Status = previousStatus.ToString() }, new { Status = nextStatus.ToString() });
+            await _context.SaveChangesAsync();
             return Ok(new SampleDto(sample));
         }
         catch (Exception ex)
@@ -288,8 +298,8 @@ public class SamplesController : ControllerBase
             sample.IsDeleted = true;
             sample.DeletedAt = DateTimeOffset.UtcNow;
             sample.DeletedById = userId;
+            _auditLogService.Log("Delete", "Sample", nameof(Sample), sample.Id.ToString(), $"Sample {sample.SampleNumber} deleted", userId, User.Identity?.Name, sample.Id);
             await _context.SaveChangesAsync();
-            await _auditLogService.LogAsync("Delete", "Sample", nameof(Sample), sample.Id.ToString(), $"Sample {sample.SampleNumber} deleted", userId, User.Identity?.Name, sample.Id);
             return NoContent();
         }
         catch (Exception ex)
@@ -300,7 +310,7 @@ public class SamplesController : ControllerBase
     }
 
     public record CreateSampleRequest(string SampleNumber, string Origin, string SampleSource, string Location, decimal Quantity, string Unit, decimal Tonnage, string Priority, string SubmittedBy, string ReceivedBy, string BatchNumber, string Notes);
-    public record UpdateSampleRequest(string Location, decimal Quantity, string Priority, string? AssignedTo, string BatchNumber, string Notes);
+    public record UpdateSampleRequest(string Location, decimal Quantity, string Priority, string? AssignedTo, string BatchNumber, string Notes, string Reason);
     public record UpdateSampleStatusRequest(string Status, string? Comment = null);
 
     public class SampleDto
