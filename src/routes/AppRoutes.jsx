@@ -1,4 +1,13 @@
-import { SampleRegistration, SampleManagement, SampleVerification, ResultsEntry, COAGenerator, QCManagement, FileManagement, Reports, AdminPanel, AccessDenied } from "../pages/FeaturePages";
+import { SampleRegistration } from "../pages/SampleRegistration";
+import { SampleManagement } from "../pages/SampleManagement";
+import { SampleVerification } from "../pages/SampleVerification";
+import { ResultsEntry } from "../pages/ResultsEntry";
+import { COAGenerator } from "../pages/COAGenerator";
+import { QCManagement } from "../pages/QCManagement";
+import { FileManagement } from "../pages/FileManagement";
+import { Reports } from "../pages/Reports";
+import { AdminPanel } from "../pages/AdminPanel";
+import { AccessDenied } from "../pages/AccessDenied";
 import Dashboard from "../pages/Dashboard";
 
 export default function AppRoutes({

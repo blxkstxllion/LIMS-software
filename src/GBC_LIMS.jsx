@@ -19,7 +19,7 @@ import AppBootstrap from "./AppBootstrap";
  * All business logic, features, and routing are delegated to modules:
  * - src/AppBootstrap.jsx: main app shell and layout
  * - src/routes/AppRoutes.jsx: centralized page routing
- * - src/pages/FeaturePages.jsx: all feature implementations
+ * - src/pages/: one file per feature implementation
  * - src/services/: business logic and data access
  * - src/contexts/: global state management
  */
