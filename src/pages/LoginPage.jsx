@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { Beaker, Eye, EyeOff, Lock, IdCard, ShieldCheck, FlaskConical, Share2, BarChart3, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Lock, IdCard, ShieldCheck, FlaskConical, Share2, BarChart3, ArrowRight } from "lucide-react";
 import { Button } from "../components/shared";
 import { useAuth } from "../contexts/AuthContext";
+
+// Rising bubbles — a beaker/flask motif instead of the old static network-line SVG,
+// which only ever pulsed opacity and never actually moved. Fixed, not Math.random()
+// on every render — positions/timing only need to look organic once, not reshuffle
+// on each re-render (e.g. while typing a password).
+const BUBBLES = [
+  { left: "10%", size: 14, dx: 8, duration: 10, delay: 0 },
+  { left: "22%", size: 9, dx: -6, duration: 8, delay: 1.5 },
+  { left: "35%", size: 18, dx: 10, duration: 13, delay: 3 },
+  { left: "48%", size: 7, dx: -8, duration: 7, delay: 0.8 },
+  { left: "60%", size: 12, dx: 6, duration: 11, delay: 4.2 },
+  { left: "72%", size: 16, dx: -10, duration: 14, delay: 2 },
+  { left: "83%", size: 8, dx: 7, duration: 9, delay: 5 },
+  { left: "90%", size: 11, dx: -5, duration: 12, delay: 1 },
+];
 
 // Fixed, not Math.random() on every render — positions/timing only need to look
 // organic once, not reshuffle on each re-render (e.g. while typing a password).
@@ -97,27 +112,13 @@ export default function LoginPage() {
         <div className="lims-bg-grid" />
         <div ref={glowRef} className="lims-bg-glow lims-bg-glow-1" />
         <div className="lims-bg-glow lims-bg-glow-2" />
-        <svg className="lims-bg-lines" viewBox="0 0 400 500" preserveAspectRatio="none" aria-hidden="true">
-          <g stroke="#93c5fd" strokeWidth="1" fill="none">
-            <line x1="40" y1="60" x2="160" y2="130" />
-            <line x1="160" y1="130" x2="120" y2="240" />
-            <line x1="160" y1="130" x2="300" y2="90" />
-            <line x1="300" y1="90" x2="360" y2="200" />
-            <line x1="120" y1="240" x2="60" y2="360" />
-            <line x1="120" y1="240" x2="260" y2="320" />
-            <line x1="260" y1="320" x2="340" y2="420" />
-          </g>
-          <g fill="#bfdbfe">
-            <circle cx="40" cy="60" r="3" />
-            <circle cx="160" cy="130" r="3.5" />
-            <circle cx="120" cy="240" r="3" />
-            <circle cx="300" cy="90" r="3" />
-            <circle cx="360" cy="200" r="2.5" />
-            <circle cx="60" cy="360" r="3" />
-            <circle cx="260" cy="320" r="3.5" />
-            <circle cx="340" cy="420" r="2.5" />
-          </g>
-        </svg>
+        {BUBBLES.map((b, i) => (
+          <div
+            key={i}
+            className="lims-bg-bubble"
+            style={{ left: b.left, width: b.size, height: b.size, animationDuration: `${b.duration}s`, animationDelay: `${b.delay}s`, "--lims-bubble-x": `${b.dx}px` }}
+          />
+        ))}
         {PARTICLES.map((p, i) => (
           <div
             key={i}
@@ -127,9 +128,10 @@ export default function LoginPage() {
         ))}
 
         <div style={{ position: "relative", zIndex: 1, textAlign: "center", color: "#fff" }}>
-          <div style={{ position: "relative", overflow: "hidden", marginBottom: 8 }}>
-            <div className="lims-light-sweep" />
-            <div style={{ fontSize: 56, marginBottom: 8, display: "flex", justifyContent: "center" }}><Beaker size={56} /></div>
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 8, display: "flex", justifyContent: "center" }}>
+              <img src="/logo.png" alt="Assay — Quality Our Cornerstone" style={{ width: 64, height: 64, borderRadius: "50%", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }} />
+            </div>
             <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 3, color: "#93c5fd", textTransform: "uppercase", marginBottom: 8 }}>Ghana Bauxite Company</div>
             <div style={{ fontSize: 32, fontWeight: 800, lineHeight: 1.2, marginBottom: 8 }}>GBC LIMS</div>
           </div>
@@ -137,7 +139,8 @@ export default function LoginPage() {
           <div style={{ fontSize: 12, color: "#93c5fd", fontStyle: "italic", marginBottom: 40 }}>ASSAY!! QUALITY OUR CORNERSTONE</div>
           <div className="lims-login-hero-extra" style={{ fontSize: 14, color: "#dbeafe", lineHeight: 1.7, marginBottom: 20, maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>Driving innovation, safety, and excellence in bauxite operations</div>
           <div className="lims-login-hero-extra" style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
-            <div ref={photoRef} className="lims-photo-frame" style={{ width: 570, maxWidth: "100%", borderRadius: 24, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)", padding: 29, display: "flex", flexDirection: "column", alignItems: "center", gap: 21, boxSizing: "border-box", boxShadow: "0 0 60px rgba(96,165,250,0.15)" }}>
+            <div ref={photoRef} className="lims-photo-frame" style={{ width: 570, maxWidth: "100%", borderRadius: 24, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)", padding: 29, display: "flex", flexDirection: "column", alignItems: "center", gap: 21, boxSizing: "border-box", boxShadow: "0 0 60px rgba(96,165,250,0.15)", position: "relative", overflow: "hidden" }}>
+              <div className="lims-light-sweep" />
               <img src="/team.png" alt="GBC Laboratory Team" style={{ width: "100%", borderRadius: 19, display: "block" }} />
               <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: 2, color: "#dbeafe", textAlign: "center", textTransform: "uppercase" }}>Quality, Our Cornerstone</div>
             </div>
@@ -162,7 +165,7 @@ export default function LoginPage() {
             <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#1e3a8a,#2563eb)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", marginBottom: 14, boxShadow: "0 8px 20px rgba(30,58,138,0.25)" }}>
               <Lock size={22} />
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>Welcome back 👋</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>Welcome back</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "#1e3a8a", marginTop: 4 }}>Secure Sign In</div>
             <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>Access your laboratory workspace</div>
           </div>
