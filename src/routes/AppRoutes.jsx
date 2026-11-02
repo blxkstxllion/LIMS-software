@@ -1,3 +1,5 @@
+import { Routes, Route, Navigate } from "react-router-dom";
+import { keyToPath } from "./pageKeyPath";
 import { SampleRegistration } from "../pages/SampleRegistration";
 import { SampleManagement } from "../pages/SampleManagement";
 import { SampleVerification } from "../pages/SampleVerification";
@@ -12,7 +14,6 @@ import Dashboard from "../pages/Dashboard";
 
 export default function AppRoutes({
   user,
-  page,
   samples,
   results,
   coas,
@@ -32,32 +33,28 @@ export default function AppRoutes({
   canAccess,
 }) {
   if (!user) return null;
-  if (!canAccess(page)) return <AccessDenied page={page} />;
 
   const pageProps = { user, samples, results, coas, setSamples, setResults, setCoas, onNavigate, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, showToast };
 
-  switch (page) {
-    case "dashboard":
-      return <Dashboard {...pageProps} />;
-    case "sample_registration":
-      return <SampleRegistration {...pageProps} />;
-    case "sample_management":
-      return <SampleManagement {...pageProps} />;
-    case "sample_verification":
-      return <SampleVerification {...pageProps} />;
-    case "results_entry":
-      return <ResultsEntry {...pageProps} />;
-    case "coa_generator":
-      return <COAGenerator {...pageProps} />;
-    case "qc_management":
-      return <QCManagement {...pageProps} />;
-    case "file_management":
-      return <FileManagement {...pageProps} />;
-    case "reports":
-      return <Reports {...pageProps} />;
-    case "admin_panel":
-      return <AdminPanel {...pageProps} />;
-    default:
-      return <Dashboard {...pageProps} />;
-  }
+  // Each feature page requires a specific role (see SIDEBAR_MENU) — a direct/deep link
+  // to a page the signed-in user can't use shows AccessDenied instead of the feature,
+  // same guard that used to run once up front against the single active `page` key.
+  const guarded = (key, element) => (canAccess(key) ? element : <AccessDenied page={key} />);
+
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to={keyToPath("dashboard")} replace />} />
+      <Route path={keyToPath("dashboard")} element={<Dashboard {...pageProps} />} />
+      <Route path={keyToPath("sample_registration")} element={guarded("sample_registration", <SampleRegistration {...pageProps} />)} />
+      <Route path={keyToPath("sample_management")} element={guarded("sample_management", <SampleManagement {...pageProps} />)} />
+      <Route path={keyToPath("sample_verification")} element={guarded("sample_verification", <SampleVerification {...pageProps} />)} />
+      <Route path={keyToPath("results_entry")} element={guarded("results_entry", <ResultsEntry {...pageProps} />)} />
+      <Route path={keyToPath("coa_generator")} element={guarded("coa_generator", <COAGenerator {...pageProps} />)} />
+      <Route path={keyToPath("qc_management")} element={guarded("qc_management", <QCManagement {...pageProps} />)} />
+      <Route path={keyToPath("file_management")} element={guarded("file_management", <FileManagement {...pageProps} />)} />
+      <Route path={keyToPath("reports")} element={guarded("reports", <Reports {...pageProps} />)} />
+      <Route path={keyToPath("admin_panel")} element={guarded("admin_panel", <AdminPanel {...pageProps} />)} />
+      <Route path="*" element={<Navigate to={keyToPath("dashboard")} replace />} />
+    </Routes>
+  );
 }
