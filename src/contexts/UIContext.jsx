@@ -5,7 +5,6 @@ const UIContext = createContext(null);
 
 export function UIProvider({ children }) {
   const [toast, setToast] = useState(null);
-  const [page, setPage] = useState("dashboard");
 
   const showToast = (message, type = "info") => {
     setToast(buildToast(message, type));
@@ -13,7 +12,7 @@ export function UIProvider({ children }) {
 
   const clearToast = () => setToast(null);
 
-  const value = useMemo(() => ({ toast, setToast, showToast, clearToast, page, setPage }), [toast, page]);
+  const value = useMemo(() => ({ toast, setToast, showToast, clearToast }), [toast]);
 
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
 }

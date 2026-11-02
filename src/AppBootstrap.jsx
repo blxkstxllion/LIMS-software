@@ -1,9 +1,11 @@
 import { useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { SIDEBAR_MENU } from "./constants/lims";
 import { Toast } from "./components/shared";
 import DashboardLayout from "./layouts/DashboardLayout";
 import LoginPage from "./pages/LoginPage";
 import AppRoutes from "./routes/AppRoutes";
+import { keyToPath, pathToKey } from "./routes/pageKeyPath";
 import { useAuth } from "./contexts/AuthContext";
 import { useSamples } from "./contexts/SampleContext";
 import { useUI } from "./contexts/UIContext";
@@ -20,14 +22,18 @@ import { useUI } from "./contexts/UIContext";
  * This file acts as the bridge between:
  * - Auth context → provides user session
  * - Sample context → provides domain data
- * - UI context → provides notifications and page state
+ * - UI context → provides toast notifications
  * - Layout → wraps authenticated app with sidebar/header
- * - Routes → delegates to feature pages based on page state
+ * - Routes → delegates to feature pages based on the current URL (react-router)
  */
 export default function AppBootstrap() {
   const { user, login, logout } = useAuth();
   const { samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged } = useSamples();
-  const { toast, clearToast, page, setPage, showToast } = useUI();
+  const { toast, clearToast, showToast } = useUI();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const page = pathToKey(location.pathname);
+  const onNavigate = useCallback((key) => navigate(keyToPath(key)), [navigate]);
 
   // Permission helper: check if user can access a feature
   const canAccess = useCallback((featureKey) => {
@@ -56,17 +62,16 @@ export default function AppBootstrap() {
   // Show authenticated app with layout, routes, and notifications
   return (
     <>
-      <DashboardLayout user={user} onLogout={logout} activePage={page} onNavigate={setPage}>
+      <DashboardLayout user={user} onLogout={logout} activePage={page} onNavigate={onNavigate}>
         <AppRoutes
           user={user}
-          page={page}
           samples={samples}
           results={results}
           coas={coas}
           setSamples={setSamples}
           setResults={setResults}
           setCoas={setCoas}
-          onNavigate={setPage}
+          onNavigate={onNavigate}
           onSampleAdded={onSampleAdded}
           onResultAdded={onResultAdded}
           onCoaCreated={onCoaCreated}
