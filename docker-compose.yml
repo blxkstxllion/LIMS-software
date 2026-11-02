@@ -36,7 +36,15 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       EnableHttpsRedirection: "false"
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-lims};Username=${POSTGRES_USER:-lims};Password=${POSTGRES_PASSWORD:?}"
+      # Every normal request runs as the restricted, non-superuser lims_app role —
+      # created once via scripts/setup-db-roles.sql, kept separate from POSTGRES_USER
+      # (which, in the official postgres image, becomes the cluster's bootstrap
+      # superuser and so can never be meaningfully restricted via GRANT/REVOKE no
+      # matter what's revoked from it). MigrationsConnection below is the only thing
+      # that still uses POSTGRES_USER, and only at startup, for Migrate() — CREATE/
+      # ALTER TABLE needs that role's ownership either way.
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-lims};Username=${POSTGRES_APP_USER:-lims_app};Password=${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set - see .env.example}"
+      ConnectionStrings__MigrationsConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-lims};Username=${POSTGRES_USER:-lims};Password=${POSTGRES_PASSWORD:?}"
       Jwt__Secret: ${JWT_SECRET:?JWT_SECRET must be set - see .env.example}
       Jwt__Issuer: "https://${DOMAIN:?DOMAIN must be set - see .env.example}"
       Jwt__Audience: "https://${DOMAIN:?DOMAIN must be set - see .env.example}"
