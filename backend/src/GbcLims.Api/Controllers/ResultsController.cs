@@ -65,7 +65,13 @@ public class ResultsController : ControllerBase
     private async Task<string> GenerateAnalysisNumberAsync()
     {
         long value = _context.Database.IsRelational()
-            ? await _context.Database.SqlQueryRaw<long>("SELECT nextval('result_analysis_number_seq')").FirstAsync()
+            // EF Core's SqlQueryRaw<T> for a primitive T wraps this in an outer query
+            // that projects a column literally named "Value" — without the alias,
+            // Postgres has no such column and this throws 42703 at runtime. Only
+            // caught because the test suite now runs against real Postgres
+            // (Testcontainers) instead of EF Core's InMemory provider, which never
+            // executes raw SQL at all and so never exercised this path.
+            ? await _context.Database.SqlQueryRaw<long>("SELECT nextval('result_analysis_number_seq') AS \"Value\"").FirstAsync()
             : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1_000_000;
         return $"RES-{value:D6}";
     }

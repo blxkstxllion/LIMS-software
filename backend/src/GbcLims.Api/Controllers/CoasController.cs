@@ -88,7 +88,10 @@ public class CoasController : ControllerBase
     private async Task<string> GenerateCoaNumberAsync()
     {
         long value = _context.Database.IsRelational()
-            ? await _context.Database.SqlQueryRaw<long>("SELECT nextval('coa_number_seq')").FirstAsync()
+            // See the identical comment in ResultsController.GenerateAnalysisNumberAsync
+            // — SqlQueryRaw<T> for a primitive T requires the result column aliased
+            // exactly "Value".
+            ? await _context.Database.SqlQueryRaw<long>("SELECT nextval('coa_number_seq') AS \"Value\"").FirstAsync()
             : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 1_000_000;
         return $"COA-{value:D6}";
     }
