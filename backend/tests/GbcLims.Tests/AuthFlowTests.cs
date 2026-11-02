@@ -14,12 +14,18 @@ using Xunit;
 
 namespace GbcLims.Tests;
 
-public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres")]
+public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly WebApplicationFactory<Program> _rawFactory;
+    private readonly PostgresFixture _postgres;
+    private WebApplicationFactory<Program> _factory = null!;
 
-    public AuthFlowTests(WebApplicationFactory<Program> factory)
+    public AuthFlowTests(WebApplicationFactory<Program> factory, PostgresFixture postgres)
     {
+        _rawFactory = factory;
+        _postgres = postgres;
+
         // Program.cs reads Jwt:Secret into a local variable before builder.Build() runs
         // (to configure JWT Bearer validation), which is before WithWebHostBuilder's
         // ConfigureAppConfiguration override gets layered in — so a config-override
@@ -29,8 +35,19 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
         // signing) reads agree. Tests supply their own so they don't depend on
         // `dotnet user-secrets` being configured on whatever machine runs them.
         Environment.SetEnvironmentVariable("Jwt__Secret", "test-only-secret-never-used-outside-automated-tests-0123456789");
+    }
 
-        _factory = factory.WithWebHostBuilder(builder =>
+    // A real Postgres database (via PostgresFixture, Testcontainers), migrated with the
+    // project's actual migrations — not EF Core's InMemory provider, which silently
+    // no-ops anything that isn't plain relational DDL (the append-only trigger, the
+    // number sequences, HasFilter unique indexes). The seeded Development test
+    // accounts this suite logs in with are created by Program.cs's own startup code
+    // against this same real schema, exactly as a real deployment's Migrate() would.
+    public async Task InitializeAsync()
+    {
+        var connectionString = await _postgres.CreateDatabaseAsync($"authflowtests_{Guid.NewGuid():N}");
+
+        _factory = _rawFactory.WithWebHostBuilder(builder =>
         {
             // Seeding of the test accounts this suite logs in with is gated to
             // Development (never runs in a real deployment); pin the test host there
@@ -50,10 +67,12 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
             {
                 services.RemoveAll<DbContextOptions<GbcLimsDbContext>>();
                 services.RemoveAll<GbcLimsDbContext>();
-                services.AddDbContext<GbcLimsDbContext>(options => options.UseInMemoryDatabase("AuthFlowTests"));
+                services.AddDbContext<GbcLimsDbContext>(options => options.UseNpgsql(connectionString));
             });
         });
     }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task Login_And_AccessProtectedEndpoints_Work()
@@ -85,6 +104,5 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
     private sealed class AuthResponse
     {
         public string AccessToken { get; set; } = string.Empty;
-        public string RefreshToken { get; set; } = string.Empty;
     }
 }
