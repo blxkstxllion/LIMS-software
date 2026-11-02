@@ -188,13 +188,31 @@ using (var scope = app.Services.CreateScope())
     // without Postgres) doesn't support migrations at all, so it still needs EnsureCreated.
     if (db.Database.IsRelational())
     {
-        // Deliberately NOT caught: a failed migration against a real database means
-        // the schema the rest of this process assumes may not exist. Logging a warning
-        // and continuing anyway (the old behavior) would run a live LIMS against a
-        // broken or half-migrated schema — crashing on startup is the correct failure
-        // mode here, not a 500 on whatever query happens to hit the missing column
-        // first.
-        db.Database.Migrate();
+        // Production connects as a restricted, non-superuser role (DefaultConnection)
+        // that can't CREATE/ALTER TABLE — Migrate() needs the schema-owning role
+        // instead, configured separately as MigrationsConnection. Local dev and the
+        // test suite have no such split (one connection does everything, same as
+        // before this existed), so this falls back to migrating on the regular
+        // context exactly as it always did.
+        var migrationsConnectionString = builder.Configuration.GetConnectionString("MigrationsConnection");
+        if (!string.IsNullOrWhiteSpace(migrationsConnectionString))
+        {
+            var migrationsOptions = new DbContextOptionsBuilder<GbcLimsDbContext>()
+                .UseNpgsql(migrationsConnectionString)
+                .Options;
+            using var migrationsContext = new GbcLimsDbContext(migrationsOptions);
+            // Deliberately NOT caught: a failed migration against a real database means
+            // the schema the rest of this process assumes may not exist. Logging a
+            // warning and continuing anyway (the old behavior) would run a live LIMS
+            // against a broken or half-migrated schema — crashing on startup is the
+            // correct failure mode here, not a 500 on whatever query happens to hit the
+            // missing column first.
+            migrationsContext.Database.Migrate();
+        }
+        else
+        {
+            db.Database.Migrate();
+        }
     }
     else
     {
