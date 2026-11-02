@@ -12,15 +12,32 @@ using Xunit;
 
 namespace GbcLims.Tests;
 
-// Each test builds its own factory with a uniquely-named InMemory database (not a
-// shared IClassFixture instance) — sample/analysis/COA numbers are allocated from
+// Each test builds its own factory against a freshly-created, uniquely-named real
+// Postgres database (via the shared PostgresFixture/Testcontainers container, not a
+// per-class InMemory instance) — sample/analysis/COA numbers are allocated from
 // per-request sequences and several endpoints enforce uniqueness, so tests sharing one
-// database could interfere with each other depending on run order.
+// database could interfere with each other depending on run order. Real Postgres also
+// means the raw-SQL migrations (append-only trigger, number sequences) actually run,
+// unlike InMemory's EnsureCreated, which silently skips them.
+[Collection("Postgres")]
 public class WorkflowTests
 {
-    private static WebApplicationFactory<Program> CreateFactory(string dbName)
+    private readonly PostgresFixture _postgres;
+
+    public WorkflowTests(PostgresFixture postgres)
+    {
+        _postgres = postgres;
+    }
+
+    private async Task<WebApplicationFactory<Program>> CreateFactoryAsync(string dbName)
     {
         Environment.SetEnvironmentVariable("Jwt__Secret", "test-only-secret-never-used-outside-automated-tests-0123456789");
+        // Postgres identifiers cap at 63 bytes; some test method names alone are
+        // already close to that, so only a short, truncated prefix of the name is
+        // kept for readability — the GUID suffix is what actually guarantees
+        // uniqueness.
+        var shortName = dbName.ToLowerInvariant()[..Math.Min(20, dbName.Length)];
+        var connectionString = await _postgres.CreateDatabaseAsync($"{shortName}_{Guid.NewGuid():N}");
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -33,7 +50,7 @@ public class WorkflowTests
             {
                 services.RemoveAll<DbContextOptions<GbcLimsDbContext>>();
                 services.RemoveAll<GbcLimsDbContext>();
-                services.AddDbContext<GbcLimsDbContext>(options => options.UseInMemoryDatabase(dbName));
+                services.AddDbContext<GbcLimsDbContext>(options => options.UseNpgsql(connectionString));
             });
         });
     }
@@ -73,7 +90,7 @@ public class WorkflowTests
     [Fact]
     public async Task SampleStatus_AllowedTransition_Succeeds()
     {
-        using var factory = CreateFactory(nameof(SampleStatus_AllowedTransition_Succeeds));
+        using var factory = await CreateFactoryAsync(nameof(SampleStatus_AllowedTransition_Succeeds));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
 
         var created = await chemist.PostAsJsonAsync("/api/samples", new
@@ -94,7 +111,7 @@ public class WorkflowTests
     [Fact]
     public async Task SampleStatus_ForbiddenTransition_Rejected()
     {
-        using var factory = CreateFactory(nameof(SampleStatus_ForbiddenTransition_Rejected));
+        using var factory = await CreateFactoryAsync(nameof(SampleStatus_ForbiddenTransition_Rejected));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
         var created = await chemist.PostAsJsonAsync("/api/samples", new
         {
@@ -114,7 +131,7 @@ public class WorkflowTests
     [Fact]
     public async Task ResultWorkflow_Create_Submit_Approve_Succeeds()
     {
-        using var factory = CreateFactory(nameof(ResultWorkflow_Create_Submit_Approve_Succeeds));
+        using var factory = await CreateFactoryAsync(nameof(ResultWorkflow_Create_Submit_Approve_Succeeds));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
 
         var sampleResponse = await chemist.PostAsJsonAsync("/api/samples", new
@@ -145,7 +162,7 @@ public class WorkflowTests
     [Fact]
     public async Task ResultWorkflow_SelfApproval_Blocked_RegardlessOfRole()
     {
-        using var factory = CreateFactory(nameof(ResultWorkflow_SelfApproval_Blocked_RegardlessOfRole));
+        using var factory = await CreateFactoryAsync(nameof(ResultWorkflow_SelfApproval_Blocked_RegardlessOfRole));
         // Admin both creates and tries to approve — the review explicitly flagged the
         // old admin self-approval exemption; this is the regression test for its removal.
         var admin = await LoginAsAsync(factory, "ADMIN");
@@ -168,7 +185,7 @@ public class WorkflowTests
     [Fact]
     public async Task ResultWorkflow_ApproveWithWrongPassword_Rejected()
     {
-        using var factory = CreateFactory(nameof(ResultWorkflow_ApproveWithWrongPassword_Rejected));
+        using var factory = await CreateFactoryAsync(nameof(ResultWorkflow_ApproveWithWrongPassword_Rejected));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
         var sampleResponse = await chemist.PostAsJsonAsync("/api/samples", new
         {
@@ -188,7 +205,7 @@ public class WorkflowTests
     [Fact]
     public async Task ResultWorkflow_UnprivilegedRole_CannotCreate()
     {
-        using var factory = CreateFactory(nameof(ResultWorkflow_UnprivilegedRole_CannotCreate));
+        using var factory = await CreateFactoryAsync(nameof(ResultWorkflow_UnprivilegedRole_CannotCreate));
         // Management is read-only everywhere in this app — CanCreateRecords excludes it.
         var management = await LoginAsAsync(factory, "MANAGER");
         var resultResponse = await management.PostAsJsonAsync("/api/results", ValidResultPayload(Guid.NewGuid().ToString(), "Submitted"));
@@ -198,7 +215,7 @@ public class WorkflowTests
     [Fact]
     public async Task ResultWorkflow_RejectedResult_CanBeAmendedByCreator_ButNotByOthers()
     {
-        using var factory = CreateFactory(nameof(ResultWorkflow_RejectedResult_CanBeAmendedByCreator_ButNotByOthers));
+        using var factory = await CreateFactoryAsync(nameof(ResultWorkflow_RejectedResult_CanBeAmendedByCreator_ButNotByOthers));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
         var sampleResponse = await chemist.PostAsJsonAsync("/api/samples", new
         {
@@ -244,7 +261,7 @@ public class WorkflowTests
     [Fact]
     public async Task CoaSnapshot_StaysFrozen_AfterSampleIsReassayedAndReapproved()
     {
-        using var factory = CreateFactory(nameof(CoaSnapshot_StaysFrozen_AfterSampleIsReassayedAndReapproved));
+        using var factory = await CreateFactoryAsync(nameof(CoaSnapshot_StaysFrozen_AfterSampleIsReassayedAndReapproved));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
         var engineer = await LoginAsAsync(factory, "ENGINEER");
 
@@ -303,7 +320,7 @@ public class WorkflowTests
     [Fact]
     public async Task CoaWorkflow_GeneratorCannotApproveOwnCoa()
     {
-        using var factory = CreateFactory(nameof(CoaWorkflow_GeneratorCannotApproveOwnCoa));
+        using var factory = await CreateFactoryAsync(nameof(CoaWorkflow_GeneratorCannotApproveOwnCoa));
         var chemist = await LoginAsAsync(factory, "CHEMIST");
         var engineer = await LoginAsAsync(factory, "ENGINEER");
 
