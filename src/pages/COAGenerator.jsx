@@ -123,19 +123,20 @@ export function COAGenerator({ user, results, coas, setCoas, showToast, onCoaCre
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
   };
 
-  // E-signature: a certificate changing status (Approved, then Issued — the point it
-  // actually leaves the building) requires re-entering the current password, same as
-  // Result approval. signModal holds which transition is pending confirmation.
-  const [signModal, setSignModal] = useState(null);
+  // E-signature: marking a certificate Issued (the point it actually leaves the
+  // building) requires re-entering the current password, same as Result/COA approval
+  // in Verification Center. Approval itself happens there now, not here — this is
+  // the only status transition COA Generator still owns.
+  const [showIssueModal, setShowIssueModal] = useState(false);
   const [signPassword, setSignPassword] = useState("");
 
-  const handleCoaStatusChange = async (status, successMessage, password) => {
+  const handleMarkIssued = async () => {
     try {
-      const updated = await onCoaStatusChanged(preview.id, status, password);
+      const updated = await onCoaStatusChanged(preview.id, "Issued", signPassword);
       setCoas((prev) => prev.map((c) => (c.id === preview.id ? { ...c, ...updated } : c)));
       setPreview((prev) => ({ ...prev, ...updated }));
-      showToast(successMessage, "success");
-      setSignModal(null); setSignPassword("");
+      showToast("COA marked as issued.", "success");
+      setShowIssueModal(false); setSignPassword("");
     } catch (error) {
       showToast(error.message || "Unable to update COA status.", "error");
     }
@@ -147,17 +148,17 @@ export function COAGenerator({ user, results, coas, setCoas, showToast, onCoaCre
         <Button onClick={()=>{setPreview(null);setViewList(true);}} variant="secondary">← Back</Button>
         <Button onClick={exportCOAToPDF} variant="primary">🖨 Export PDF</Button>
         <Button onClick={exportCOAToWord} variant="ghost">⬇ Export Word</Button>
-        {preview.status === "Draft" && <Button onClick={()=>setSignModal("Approved")} variant="success">✅ Approve COA</Button>}
-        {preview.status === "Approved" && <Button onClick={()=>setSignModal("Issued")} variant="warning">📤 Mark as Issued</Button>}
+        {preview.status === "Draft" && <span style={{ fontSize:13, color:"#9ca3af" }}>Awaiting approval in Verification Center</span>}
+        {preview.status === "Approved" && <Button onClick={()=>setShowIssueModal(true)} variant="warning">📤 Mark as Issued</Button>}
       </div>
       <div ref={docRef} style={{ border:"1.5px solid #e5e7eb", borderRadius:12, overflow:"hidden" }}><COADocument coa={preview} user={user} /></div>
-      {signModal && (
-        <Modal title={signModal === "Approved" ? "Approve COA" : "Mark COA as Issued"} onClose={()=>{setSignModal(null);setSignPassword("");}}>
-          <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>{signModal === "Approved" ? "Approving this certificate confirms it's ready to be issued." : "Marking this certificate as Issued confirms it has been sent to the client."}</div>
+      {showIssueModal && (
+        <Modal title="Mark COA as Issued" onClose={()=>{setShowIssueModal(false);setSignPassword("");}}>
+          <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>Marking this certificate as Issued confirms it has been sent to the client.</div>
           <Input label="Re-enter Your Password to Confirm" type="password" value={signPassword} onChange={setSignPassword} required />
           <div style={{ display:"flex", gap:10 }}>
-            <Button onClick={()=>handleCoaStatusChange(signModal, signModal === "Approved" ? "COA approved." : "COA marked as issued.", signPassword)} variant={signModal === "Approved" ? "success" : "warning"}>Confirm</Button>
-            <Button onClick={()=>{setSignModal(null);setSignPassword("");}} variant="secondary">Cancel</Button>
+            <Button onClick={handleMarkIssued} variant="warning">Confirm</Button>
+            <Button onClick={()=>{setShowIssueModal(false);setSignPassword("");}} variant="secondary">Cancel</Button>
           </div>
         </Modal>
       )}

@@ -42,8 +42,8 @@ export default function Dashboard({ user, samples, onNavigate }) {
 
   const quickActions = {
     xrf_chemist: [["Beaker", "Register New Sample", "sample_registration"], ["Package", "View My Samples", "sample_management"], ["Microscope", "Enter Results", "results_entry"]],
-    bauxite_engineer: [["CheckCircle", "Approve Results", "results_entry"], ["Package", "View Samples", "sample_management"], ["FileText", "Generate COA", "coa_generator"]],
-    qa_engineer: [["CheckCircle", "Verify Samples", "sample_verification"], ["Target", "Review QC Data", "qc_management"], ["FileText", "Approve COAs", "coa_generator"]],
+    bauxite_engineer: [["CheckCircle", "Verification Center", "verification_center"], ["Package", "View Samples", "sample_management"], ["FileText", "Generate COA", "coa_generator"]],
+    qa_engineer: [["CheckCircle", "Verification Center", "verification_center"], ["Target", "Review QC Data", "qc_management"], ["FileText", "Generate COA", "coa_generator"]],
     admin: [["Settings", "Manage Users", "admin_panel"], ["LayoutDashboard", "Audit Logs", "admin_panel"], ["TrendingUp", "Reports", "reports"]],
     management: [["TrendingUp", "View Reports", "reports"], ["LayoutDashboard", "Analytics", "reports"], ["FileText", "Export Data", "reports"]],
   };
