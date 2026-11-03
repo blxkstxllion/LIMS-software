@@ -110,7 +110,17 @@ export function Reports({ samples, results, coas }) {
   const exportReportAsWord = () => { const html = buildReportHtml(); const blob = new Blob([html], { type: "application/msword" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${reportTitle.replace(/\s+/g,"-")}-${reportFrequency}.doc`; a.click(); URL.revokeObjectURL(url); };
   const exportReportAsPDF = () => { const html = buildReportHtml(); const printWindow = window.open("", "_blank", "toolbar=no,scrollbars=no,resizable=yes,width=900,height=1200"); if (!printWindow) return; printWindow.document.open(); printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 300); };
   const generateReport = () => { if (reportFormat === "word") exportReportAsWord(); else exportReportAsPDF(); };
-  const exportCSV = () => { const headers = "Sample ID,Origin,Status,Priority,Date\n"; const rows = samples.map((s)=>`${s.id},${s.origin},${s.status},${s.priority},${s.dateReceived}`).join("\n"); const blob = new Blob([headers+rows], {type:"text/csv"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "gbc_samples.csv"; a.click(); };
+  // A sample's Origin is free text set by whoever registers it, so a value starting
+  // with =, +, -, or @ would otherwise open as a live formula in Excel/Sheets for
+  // anyone who later exports and opens this file (CSV/formula injection) — csvCell
+  // neutralizes that the same way buildReportHtml's escapeHtml() does for the HTML
+  // export path above, plus the standard comma/quote/newline quoting CSV needs anyway.
+  const csvCell = (value) => {
+    const str = String(value ?? "");
+    const guarded = /^[=+\-@]/.test(str) ? `'${str}` : str;
+    return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+  };
+  const exportCSV = () => { const headers = "Sample ID,Origin,Status,Priority,Date\n"; const rows = samples.map((s)=>[s.id,s.origin,s.status,s.priority,s.dateReceived].map(csvCell).join(",")).join("\n"); const blob = new Blob([headers+rows], {type:"text/csv"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "gbc_samples.csv"; a.click(); };
 
   return (
     <div style={{ padding:28 }}>
