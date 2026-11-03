@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, FileText, Target, FolderOpen, TrendingUp, Settings, Menu, Bell, LogOut } from "lucide-react";
 import { ROLE_LABELS, ROLE_COLORS, SIDEBAR_MENU } from "../constants/lims";
 import { Watermark } from "../pages/Watermark";
@@ -7,16 +7,40 @@ import { formatDate } from "../utils/lims";
 
 const iconMap = { LayoutDashboard, Beaker, Package, CheckCircle, Microscope, FileText, Target, FolderOpen, TrendingUp, Settings };
 
-export default function DashboardLayout({ user, onLogout, children, activePage, onNavigate }) {
+// How often to re-poll for new notifications. The bell previously only fetched once
+// on mount, so a rejection/approval that happened while you had the app open sat
+// invisible until a full page reload — this is what makes it an actual "push" instead
+// of a static list frozen at page-load time.
+const NOTIFICATION_POLL_MS = 30_000;
+
+export default function DashboardLayout({ user, onLogout, children, activePage, onNavigate, showToast }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  // Tracks which notification IDs have already been seen, so a toast only fires for
+  // ones that are genuinely new since the last poll — not the whole 14-day backlog on
+  // first load, and not the same item again every time the interval re-fetches it.
+  const seenIds = useRef(null);
 
   useEffect(() => {
-    fetchNotifications().then(setNotifications).catch((error) => console.error("Failed to load notifications", error));
-  }, []);
+    let cancelled = false;
+    const poll = () => {
+      fetchNotifications().then((data) => {
+        if (cancelled) return;
+        if (seenIds.current) {
+          const unseen = data.filter((n) => !seenIds.current.has(n.id));
+          if (showToast) unseen.forEach((n) => showToast(n.message, "info"));
+        }
+        seenIds.current = new Set(data.map((n) => n.id));
+        setNotifications(data);
+      }).catch((error) => console.error("Failed to load notifications", error));
+    };
+    poll();
+    const interval = setInterval(poll, NOTIFICATION_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [showToast]);
 
   const canAccess = (menuItem) => menuItem.roles.includes("all") || menuItem.roles.includes(user?.role);
   // On the mobile drawer the sidebar is always full-width (see .lims-sidebar's

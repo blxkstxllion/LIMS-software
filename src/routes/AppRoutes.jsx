@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { keyToPath } from "./pageKeyPath";
 import { SampleRegistration } from "../pages/SampleRegistration";
 import { SampleManagement } from "../pages/SampleManagement";
-import { SampleVerification } from "../pages/SampleVerification";
+import { VerificationCenter } from "../pages/VerificationCenter";
 import { ResultsEntry } from "../pages/ResultsEntry";
 import { COAGenerator } from "../pages/COAGenerator";
 import { QCManagement } from "../pages/QCManagement";
@@ -31,10 +31,11 @@ export default function AppRoutes({
   onCoaStatusChanged,
   showToast,
   canAccess,
+  refreshData,
 }) {
   if (!user) return null;
 
-  const pageProps = { user, samples, results, coas, setSamples, setResults, setCoas, onNavigate, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, showToast };
+  const pageProps = { user, samples, results, coas, setSamples, setResults, setCoas, onNavigate, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, showToast, refreshData };
 
   // Each feature page requires a specific role (see SIDEBAR_MENU) — a direct/deep link
   // to a page the signed-in user can't use shows AccessDenied instead of the feature,
@@ -47,7 +48,7 @@ export default function AppRoutes({
       <Route path={keyToPath("dashboard")} element={<Dashboard {...pageProps} />} />
       <Route path={keyToPath("sample_registration")} element={guarded("sample_registration", <SampleRegistration {...pageProps} />)} />
       <Route path={keyToPath("sample_management")} element={guarded("sample_management", <SampleManagement {...pageProps} />)} />
-      <Route path={keyToPath("sample_verification")} element={guarded("sample_verification", <SampleVerification {...pageProps} />)} />
+      <Route path={keyToPath("verification_center")} element={guarded("verification_center", <VerificationCenter {...pageProps} />)} />
       <Route path={keyToPath("results_entry")} element={guarded("results_entry", <ResultsEntry {...pageProps} />)} />
       <Route path={keyToPath("coa_generator")} element={guarded("coa_generator", <COAGenerator {...pageProps} />)} />
       <Route path={keyToPath("qc_management")} element={guarded("qc_management", <QCManagement {...pageProps} />)} />

@@ -6,16 +6,10 @@ import { Badge, Modal, Input, Select, Textarea, Button } from "../components/sha
 export function ResultsEntry({ user, samples, results, setResults, showToast, onResultAdded, onResultStatusChanged }) {
   const [form, setForm] = useState({ sampleIds:[], compositeMode:false, analysisDate:new Date().toISOString().split("T")[0], analystName:user.name, moisture:"", method:"Spectroscopy", equipment:"", al2o3:"", sio2:"", fe2o3:"", tio2:"", loi:"", cao:"", mgo:"", na2o:"", k2o:"", p2o5:"", mno:"", cr2o3:"", minorOxides:"", calibrated:false, stdDev:"", repeatability:"", notes:"" });
   const canCreate = Boolean(PERMISSIONS[user.role]?.create);
-  const canApprove = Boolean(PERMISSIONS[user.role]?.approve);
   // Roles that can't submit results (e.g. qa_engineer) land on the results list
-  // instead of a create form the backend won't let them use. Roles that CAN approve
-  // land there too, even if they can also create — reviewing what's waiting on them
-  // is the more urgent default than a blank entry form, and the pending-approval
-  // section below is otherwise invisible until they navigate to it manually.
-  const [viewList, setViewList] = useState(!canCreate || canApprove);
-  const [approveModal, setApproveModal] = useState(null);
-  const [approveComment, setApproveComment] = useState("");
-  const [approvePassword, setApprovePassword] = useState("");
+  // instead of a create form the backend won't let them use. Reviewing/approving a
+  // submitted result now lives in Verification Center, not here.
+  const [viewList, setViewList] = useState(!canCreate);
   const [correctionModal, setCorrectionModal] = useState(null);
   const [correctionReason, setCorrectionReason] = useState("");
 
@@ -81,18 +75,6 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
     }
   };
 
-  const handleApprove = async (r, decision) => {
-    if (!approvePassword) { showToast("Re-enter your password to confirm this decision.", "error"); return; }
-    try {
-      const updated = await onResultStatusChanged(r.id, decision === "approve" ? "Approved" : "Rejected", approveComment, approvePassword);
-      setResults((prev) => prev.map((x) => x.id===r.id ? updated : x));
-      showToast(`Result ${decision === "approve" ? "approved" : "rejected"}.`, decision === "approve" ? "success" : "warning");
-      setApproveModal(null); setApproveComment(""); setApprovePassword("");
-    } catch (error) {
-      showToast(error.message || "Unable to update result.", "error");
-    }
-  };
-
   // Rejected is no longer a dead end — the result's own creator can amend and
   // resubmit it, with the correction's reason recorded in the audit trail.
   const handleCorrection = async (r) => {
@@ -123,30 +105,6 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         <h1 style={{ fontSize:22, fontWeight:800, color:"#111827", margin:0 }}>Analysis Results</h1>
         {canCreate && <Button onClick={()=>setViewList(false)} variant="primary">+ New Result</Button>}
       </div>
-      {canApprove && (() => {
-        // No exemption for admin — matches the backend (ResultsController), which
-        // blocks self-approval for every role including admin.
-        const pendingApproval = results.filter((r) => r.status === "Submitted" && r.createdBy !== user.staffId);
-        return (
-          <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #fde68a", marginBottom:20, overflow:"hidden" }}>
-            <div style={{ padding:"14px 18px", background:"#fffbeb", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom: pendingApproval.length ? "1px solid #fef3c7" : "none" }}>
-              <div style={{ fontSize:14, fontWeight:700, color:"#92400e" }}>⏳ Pending Your Approval</div>
-              <Badge text={String(pendingApproval.length)} color="#92400e" bg="#fef3c7" small />
-            </div>
-            {pendingApproval.length === 0 ? (
-              <div style={{ padding:"16px 18px", fontSize:13, color:"#9ca3af" }}>Nothing awaiting your review right now.</div>
-            ) : pendingApproval.map((r, i) => (
-              <div key={r.id} style={{ padding:"12px 18px", borderBottom: i < pendingApproval.length - 1 ? "1px solid #f3f4f6" : "none", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
-                <div>
-                  <div style={{ fontFamily:"monospace", fontWeight:700, color:"#1e3a8a", fontSize:13 }}>{r.id} <span style={{ color:"#9ca3af", fontWeight:400 }}>· Sample{r.sampleNumbers?.length > 1 ? "s" : ""} {sampleListLabel(r)}</span></div>
-                  <div style={{ fontSize:12, color:"#6b7280" }}>Submitted by {r.createdBy || r.analystName} · Al₂O₃ {r.al2o3}% · SiO₂ {r.sio2}%</div>
-                </div>
-                <Button onClick={()=>setApproveModal(r)} variant="success" small>Review</Button>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
         <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -167,10 +125,8 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
                   {r.status === "Draft" && r.createdBy === user.staffId && (
                     <button onClick={()=>handleSubmitDraft(r)} style={{ padding:"3px 10px", background:"#dbeafe", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#1e40af", fontWeight:600 }}>Submit</button>
                   )}
-                  {PERMISSIONS[user.role].approve && r.status === "Submitted" && (
-                    r.createdBy === user.staffId
-                      ? <span style={{ fontSize:11, color:"#9ca3af" }}>Awaiting reviewer</span>
-                      : <button onClick={()=>setApproveModal(r)} style={{ padding:"3px 10px", background:"#dcfce7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#166534", fontWeight:600 }}>Approve</button>
+                  {r.status === "Submitted" && (
+                    <span style={{ fontSize:11, color:"#9ca3af" }}>{r.createdBy === user.staffId ? "Awaiting reviewer" : "Review in Verification Center"}</span>
                   )}
                   {r.status === "Rejected" && r.createdBy === user.staffId && (
                     <button onClick={()=>setCorrectionModal(r)} style={{ padding:"3px 10px", background:"#fef3c7", border:"none", borderRadius:4, cursor:"pointer", fontSize:12, color:"#92400e", fontWeight:600 }}>Amend &amp; Resubmit</button>
@@ -182,22 +138,6 @@ export function ResultsEntry({ user, samples, results, setResults, showToast, on
         </table>
         </div>
       </div>
-      {approveModal && (
-        <Modal title={`Approve Result: ${approveModal.id}`} onClose={()=>setApproveModal(null)}>
-          <div style={{ background:"#f9fafb", borderRadius:8, padding:14, marginBottom:16 }}>
-            <div className="lims-grid-2" style={{ gap:8, fontSize:13 }}>
-              {[['Sample(s)',sampleListLabel(approveModal)],['Method',approveModal.method],['Al₂O₃',`${approveModal.al2o3}%`],['SiO₂',`${approveModal.sio2}%`],['Fe₂O₃',`${approveModal.fe2o3}%`],['Total',`${approveModal.totalOxides}%`]].map(([k,v])=>(<div key={k}><span style={{ color:"#9ca3af", fontSize:11 }}>{k}: </span><strong>{v}</strong></div>))}
-            </div>
-          </div>
-          <Textarea label="Approval Comments" value={approveComment} onChange={setApproveComment} placeholder="Comments (optional)" rows={2} />
-          <Input label="Re-enter Your Password to Confirm" type="password" value={approvePassword} onChange={setApprovePassword} required />
-          <div style={{ display:"flex", gap:10 }}>
-            <Button onClick={()=>handleApprove(approveModal,"approve")} variant="success">✓ Approve</Button>
-            <Button onClick={()=>handleApprove(approveModal,"reject")} variant="danger">✗ Reject</Button>
-            <Button onClick={()=>{setApproveModal(null);setApprovePassword("");}} variant="secondary">Cancel</Button>
-          </div>
-        </Modal>
-      )}
       {correctionModal && (
         <Modal title={`Amend Result: ${correctionModal.id}`} onClose={()=>setCorrectionModal(null)}>
           <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>This moves the result back to Draft so you can correct and resubmit it. Explain what's being corrected and why.</div>

@@ -21,7 +21,13 @@ export const SIDEBAR_MENU = [
   { key: "dashboard", label: "Dashboard", icon: "LayoutDashboard", roles: ["all"] },
   { key: "sample_registration", label: "Sample Registration", icon: "Beaker", roles: ["xrf_chemist", "bauxite_engineer", "admin"] },
   { key: "sample_management", label: "Sample Management", icon: "Package", roles: ["all"] },
-  { key: "sample_verification", label: "Sample Verification", icon: "CheckCircle", roles: ["qa_engineer", "admin"] },
+  // Page access (route guard) is the union of every tab's audience below — the page
+  // component itself decides per-tab which of these roles actually sees/acts on each
+  // tab. Sample intake is open to everyone who handles samples day to day (including
+  // xrf_chemist); result/COA sign-off stays restricted to bauxite_engineer/qa_engineer/
+  // admin — chemists still can't approve their own chemistry, same independence rule
+  // as Results Entry and COA Generator have always enforced.
+  { key: "verification_center", label: "Verification Center", icon: "CheckCircle", roles: ["xrf_chemist", "bauxite_engineer", "qa_engineer", "admin"] },
   { key: "results_entry", label: "Results Entry", icon: "Microscope", roles: ["xrf_chemist", "bauxite_engineer", "qa_engineer", "admin"] },
   { key: "coa_generator", label: "COA Generator", icon: "FileText", roles: ["bauxite_engineer", "qa_engineer", "admin"] },
   { key: "qc_management", label: "QC Management", icon: "Target", roles: ["xrf_chemist", "bauxite_engineer", "qa_engineer", "admin"] },

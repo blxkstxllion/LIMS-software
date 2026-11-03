@@ -3,28 +3,51 @@ import { createSample, createResult, createCoa, fetchLimsData, updateSampleStatu
 
 const SampleContext = createContext(null);
 
+// How often to quietly re-pull the shared dataset in the background. Without this,
+// one person's action (submitting a result, rejecting a sample) is invisible to
+// everyone else's already-open tab until they hit F5 — this was the root cause behind
+// "QC/QA couldn't see a result that was already submitted". 45s is frequent enough
+// that a pending-approval queue never feels stale, without hammering the API.
+const BACKGROUND_REFRESH_MS = 45_000;
+
 export function SampleProvider({ children }) {
   const [samples, setSamples] = useState([]);
   const [results, setResults] = useState([]);
   const [coas, setCoas] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Separate from the initial load: a background/manual refresh should never flip the
+  // whole app back into its full-page loading state, or the Verification Center's list
+  // would flash empty every 45s while someone is in the middle of reading it.
+  const refreshData = useCallback(async () => {
+    try {
+      const data = await fetchLimsData();
+      setSamples(data.samples);
+      setResults(data.results);
+      setCoas(data.coas || []);
+    } catch (error) {
+      console.error("Failed to refresh LIMS data", error);
+    }
+  }, []);
+
   useEffect(() => {
-    async function loadData() {
+    let cancelled = false;
+    (async () => {
       try {
         const data = await fetchLimsData();
+        if (cancelled) return;
         setSamples(data.samples);
         setResults(data.results);
         setCoas(data.coas || []);
       } catch (error) {
         console.error("Failed to load LIMS data", error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    }
-
-    loadData();
-  }, []);
+    })();
+    const interval = setInterval(refreshData, BACKGROUND_REFRESH_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [refreshData]);
 
   const onSampleAdded = useCallback(async (sample) => {
     try {
@@ -91,7 +114,7 @@ export function SampleProvider({ children }) {
     return updated;
   }, []);
 
-  const value = useMemo(() => ({ samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading }), [samples, results, coas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading]);
+  const value = useMemo(() => ({ samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading, refreshData }), [samples, results, coas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, loading, refreshData]);
 
   return <SampleContext.Provider value={value}>{children}</SampleContext.Provider>;
 }

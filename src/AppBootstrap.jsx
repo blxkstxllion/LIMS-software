@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SIDEBAR_MENU } from "./constants/lims";
 import { Toast } from "./components/shared";
@@ -28,12 +28,23 @@ import { useUI } from "./contexts/UIContext";
  */
 export default function AppBootstrap() {
   const { user, login, logout } = useAuth();
-  const { samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged } = useSamples();
+  const { samples, setSamples, results, setResults, coas, setCoas, onSampleAdded, onResultAdded, onCoaCreated, onSampleStatusChanged, onSampleUpdated, onSampleDeleted, onResultStatusChanged, onCoaStatusChanged, refreshData } = useSamples();
   const { toast, clearToast, showToast } = useUI();
   const location = useLocation();
   const navigate = useNavigate();
   const page = pathToKey(location.pathname);
   const onNavigate = useCallback((key) => navigate(keyToPath(key)), [navigate]);
+
+  // SampleProvider sits outside AuthProvider's consumer tree, so its own initial fetch
+  // fires at raw page-mount time — on a brand new login (no refresh cookie yet), that
+  // race loses: the fetch 401s and gives up before login() has even set an access
+  // token, and with no further trigger it would otherwise sit empty until the next
+  // background poll. Refetching the moment `user` actually becomes available closes
+  // that gap immediately instead of leaving someone looking at a blank list right
+  // after signing in.
+  useEffect(() => {
+    if (user) refreshData();
+  }, [user, refreshData]);
 
   // Permission helper: check if user can access a feature
   const canAccess = useCallback((featureKey) => {
@@ -62,7 +73,7 @@ export default function AppBootstrap() {
   // Show authenticated app with layout, routes, and notifications
   return (
     <>
-      <DashboardLayout user={user} onLogout={logout} activePage={page} onNavigate={onNavigate}>
+      <DashboardLayout user={user} onLogout={logout} activePage={page} onNavigate={onNavigate} showToast={showToast}>
         <AppRoutes
           user={user}
           samples={samples}
@@ -82,6 +93,7 @@ export default function AppBootstrap() {
           onCoaStatusChanged={onCoaStatusChanged}
           showToast={showToast}
           canAccess={canAccess}
+          refreshData={refreshData}
         />
       </DashboardLayout>
       {toast && <Toast message={toast.message} type={toast.type} onClose={clearToast} />}
