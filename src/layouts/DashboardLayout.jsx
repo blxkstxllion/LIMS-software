@@ -90,7 +90,7 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ position: "relative" }}>
-                <button onClick={() => setNotifOpen(!notifOpen)} style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#111827", position: "relative" }}>
+                <button onClick={() => setNotifOpen(!notifOpen)} aria-label="Notifications" style={{ background: "#f3f4f6", border: "none", borderRadius: 6, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#111827", position: "relative" }}>
                   <Bell size={18} />
                   {notifications.length > 0 && <span style={{ position: "absolute", top: -3, right: -3, background: "#991b1b", color: "#fff", borderRadius: "9999px", fontSize: 10, fontWeight: 700, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{notifications.length}</span>}
                 </button>
@@ -100,9 +100,9 @@ export default function DashboardLayout({ user, onLogout, children, activePage, 
                     {notifications.length === 0 ? (
                       <div style={{ padding: "20px 16px", fontSize: 13, color: "#9ca3af", textAlign: "center" }}>Nothing new.</div>
                     ) : notifications.map((n) => (
-                      <div key={n.id} style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6", fontSize: 13 }}>
+                      <div key={n.id} onClick={() => { if (n.page) { onNavigate(n.page); setNotifOpen(false); } }} style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6", fontSize: 13, cursor: n.page ? "pointer" : "default" }} onMouseEnter={(e) => { if (n.page) e.currentTarget.style.background = "#f9fafb"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
                         <div style={{ color: "#111827" }}>{n.message}</div>
-                        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{n.actorName} · {formatDate(n.createdAt)}</div>
+                        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{n.actorName} · {formatDate(n.createdAt)}{n.page && <span style={{ color: "#1e3a8a", fontWeight: 600 }}> · View →</span>}</div>
                       </div>
                     ))}
                   </div>

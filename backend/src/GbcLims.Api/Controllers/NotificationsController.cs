@@ -61,14 +61,18 @@ public class NotificationsController : ControllerBase
             {
                 if (mySampleIds.TryGetValue(log.SampleId!.Value, out var sampleNumber))
                 {
-                    notifications.Add(new NotificationDto { Id = log.Id, Message = $"Sample {sampleNumber}: {log.Details}", ActorName = log.UserName, CreatedAt = log.CreatedAt });
+                    // Page is the frontend's SIDEBAR_MENU key — wherever the recipient
+                    // would actually go to see/act on what this notification refers to,
+                    // so a click can navigate there directly instead of just sitting in
+                    // the dropdown as inert text.
+                    notifications.Add(new NotificationDto { Id = log.Id, Message = $"Sample {sampleNumber}: {log.Details}", ActorName = log.UserName, CreatedAt = log.CreatedAt, Page = "sample_management" });
                 }
             }
             foreach (var log in resultLogs)
             {
                 if (log.EntityId is not null && myResults.TryGetValue(log.EntityId, out var analysisNumber))
                 {
-                    notifications.Add(new NotificationDto { Id = log.Id, Message = $"Result {analysisNumber}: {log.Details}", ActorName = log.UserName, CreatedAt = log.CreatedAt });
+                    notifications.Add(new NotificationDto { Id = log.Id, Message = $"Result {analysisNumber}: {log.Details}", ActorName = log.UserName, CreatedAt = log.CreatedAt, Page = "results_entry" });
                 }
             }
 
@@ -83,7 +87,7 @@ public class NotificationsController : ControllerBase
                 .ToListAsync();
             foreach (var log in uploadLogs)
             {
-                notifications.Add(new NotificationDto { Id = log.Id, Message = log.Details, ActorName = log.UserName, CreatedAt = log.CreatedAt });
+                notifications.Add(new NotificationDto { Id = log.Id, Message = log.Details, ActorName = log.UserName, CreatedAt = log.CreatedAt, Page = "file_management" });
             }
 
             return Ok(notifications.OrderByDescending(n => n.CreatedAt).Take(30));
@@ -101,5 +105,6 @@ public class NotificationsController : ControllerBase
         public string Message { get; set; } = string.Empty;
         public string ActorName { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
+        public string Page { get; set; } = string.Empty;
     }
 }

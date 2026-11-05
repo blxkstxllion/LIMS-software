@@ -5,7 +5,7 @@ import { Badge, Modal, Input, Select, Textarea, Button } from "../components/sha
 import { fetchAuditLogs } from "../services/userService";
 import { fetchSamplesPaged } from "../services/sampleService";
 
-export function SampleManagement({ user, samples, showToast, onSampleStatusChanged, onSampleUpdated, onSampleDeleted }) {
+export function SampleManagement({ user, showToast, onSampleStatusChanged, onSampleUpdated, onSampleDeleted }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
@@ -25,9 +25,12 @@ export function SampleManagement({ user, samples, showToast, onSampleStatusChang
   const canEdit = (s) => perm.edit === "all" || (perm.edit === "own" && s.createdBy === user.staffId);
   const canDelete = (s) => perm.delete === "all" || (perm.delete === "own" && s.createdBy === user.staffId);
 
-  // Cheap to derive from the already-loaded shared sample list, even though the table
-  // itself is now paged server-side — this just populates filter dropdown options.
-  const allStatuses = [...new Set(samples.map((s)=>s.status))];
+  // A fixed list matching every SampleStatus enum value (SamplesController's
+  // FormatSampleStatus/TryParseSampleStatus round-trip these exact strings) — not
+  // derived from whichever samples happen to already be loaded, which used to mean a
+  // status with zero current samples (e.g. "Approved", "Needs Correction") simply
+  // didn't appear as a filter option at all until one happened to exist.
+  const allStatuses = ["Pending Registration","Pending Verification","Needs Correction","Pending Analysis","In Progress","Completed","Approved","Rejected"];
   const allPriorities = ["Low","Medium","High","Urgent"];
   const totalPages = Math.max(1, Math.ceil(pagedTotal / pageSize));
 

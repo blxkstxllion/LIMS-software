@@ -1,21 +1,106 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Input, Select, Button, StatCard } from "../components/shared";
 import { fetchQcSamples } from "../services/qcService";
+import { nodeToMultiPagePdf } from "../utils/pdfExport";
+import { useSaveExportPrompt } from "../components/useSaveExportPrompt";
 
-// buildReportHtml() below writes raw HTML into a new window via document.write, not
-// through React, so nothing here gets React's automatic escaping — any interpolated
-// value must be escaped by hand or it's a stored-XSS hole waiting for a free-text field
-// to be added to the report.
-const escapeHtml = (value) =>
-  String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+// A sample's Origin is free text set by whoever registers it, so a value starting
+// with =, +, -, or @ would otherwise open as a live formula in Excel/Sheets for
+// anyone who later exports and opens this file (CSV/formula injection) — csvCell
+// neutralizes that, plus the standard comma/quote/newline quoting CSV needs anyway.
+const csvCell = (value) => {
+  const str = String(value ?? "");
+  const guarded = /^[=+\-@]/.test(str) ? `'${str}` : str;
+  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+};
 
-export function Reports({ samples, results, coas }) {
+// Letterhead matching COADocument (src/pages/COAGenerator.jsx) exactly — same logo
+// placement, same watermark, same serif header — so a PDF/Word export reads as the
+// same family of official lab document as a COA, not a different-looking artifact.
+// Plain JSX text nodes here are React-escaped automatically; nothing here needs the
+// hand-rolled escapeHtml() the old document.write()-based HTML string export used to.
+function ReportDocument({ title, periodLabel, summary, rows, totalTonnage, avgMoisture, weighted, constituents }) {
+  return (
+    <div style={{ background:"#fff", padding:32, fontFamily:"'Times New Roman',serif", fontSize:12, lineHeight:1.6, maxWidth:960, margin:"0 auto", position:"relative" }}>
+      <img src={"/logo.png"} alt="" aria-hidden="true" style={{ position:"absolute", top:"50%", left:"50%", width:420, transform:"translate(-50%,-50%) rotate(-12deg)", opacity:0.06, filter:"grayscale(1)", pointerEvents:"none", zIndex:0 }} />
+      <img src={"/logo.png"} alt="logo" style={{ position:"absolute", right:20, top:20, width:64, opacity:0.9, zIndex:1 }} />
+      <div style={{ position:"relative", zIndex:1 }}>
+        <div style={{ textAlign:"center", borderBottom:"3px solid #1e3a8a", paddingBottom:16, marginBottom:20 }}>
+          <div style={{ fontSize:24, fontWeight:800, color:"#1e3a8a", letterSpacing:2 }}>GHANA BAUXITE COMPANY LIMITED</div>
+          <div style={{ fontSize:11, color:"#6b7280" }}>IOP Group · Laboratory Services</div>
+          <div style={{ fontSize:11, fontStyle:"italic", color:"#1e3a8a" }}>ASSAY!! QUALITY OUR CORNERSTONE</div>
+          <div style={{ fontSize:20, fontWeight:700, marginTop:12, letterSpacing:3, color:"#111827" }}>{title.toUpperCase()}</div>
+          <div style={{ fontSize:12, color:"#374151" }}>{periodLabel}</div>
+        </div>
+        <div className="lims-grid-4" style={{ gap:12, marginBottom:20 }}>
+          {[["Samples in period", summary.totalSamples], ["Results generated", summary.totalResults], ["Approved results", summary.approvedResults], ["COAs issued", summary.issuedCOAs]].map(([label, value]) => (
+            <div key={label} style={{ border:"1px solid #d1d5db", borderRadius:6, padding:10, textAlign:"center" }}>
+              <div style={{ fontSize:20, fontWeight:800, color:"#1e3a8a" }}>{value}</div>
+              <div style={{ fontSize:10, color:"#6b7280" }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginBottom:20, padding:12, border:"1px solid #e5e7eb", borderRadius:6, background:"#f9fafb" }}>
+          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:6 }}>PERIOD SUMMARY</div>
+          <div style={{ fontSize:12, color:"#374151" }}>This report covers the selected period and includes {rows.length} analysed result{rows.length===1?"":"s"}, total extracted tonnage of {totalTonnage.toFixed(2)} t, and average moisture of {avgMoisture}%.</div>
+        </div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>DETAILED RESULTS ({rows.length})</div>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
+              <thead><tr style={{ background:"#1e3a8a", color:"#fff" }}>{["Date","Sample(s)","Origin","Tonnage","Moisture","Al₂O₃","SiO₂","Fe₂O₃","TiO₂","LOI"].map((h)=>(<th key={h} style={{ padding:"7px 8px", textAlign:"left" }}>{h}</th>))}</tr></thead>
+              <tbody>
+                {rows.map((r,i)=>(
+                  <tr key={i} style={{ background: i%2===0?"#f9fafb":"#fff" }}>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.date}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.sampleLabel}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.origin}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.tonnage.toFixed(2)}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.moisture}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb", fontWeight:600 }}>{r.al2o3}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.sio2}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.fe2o3}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.tio2}</td>
+                    <td style={{ padding:"6px 8px", borderBottom:"1px solid #e5e7eb" }}>{r.loi}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontWeight:700, color:"#1e3a8a", marginBottom:8 }}>WEIGHTED AVERAGES (TONNAGE WEIGHTED)</div>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+            <thead><tr style={{ background:"#1e3a8a", color:"#fff" }}><th style={{ padding:"7px 10px", textAlign:"left" }}>Constituent</th><th style={{ padding:"7px 10px", textAlign:"center" }}>Weighted Mean</th></tr></thead>
+            <tbody>
+              {constituents.map((k,i)=>(
+                <tr key={k} style={{ background: i%2===0?"#f9fafb":"#fff" }}>
+                  <td style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb" }}>{k.toUpperCase()}</td>
+                  <td style={{ padding:"6px 10px", textAlign:"center", fontWeight:600, borderBottom:"1px solid #e5e7eb" }}>{weighted[k]}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ border:"1px solid #e5e7eb", borderRadius:6, padding:12, fontSize:11, background:"#f9fafb" }}>
+          <div style={{ fontWeight:700, color:"#374151", marginBottom:4 }}>REPORT GENERATED</div>
+          <div>This report was generated automatically from current sample and analysis data. Figures are accurate as of the time of generation.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function Reports({ samples, results, coas, showToast }) {
   const [activeReport, setActiveReport] = useState("activity");
   const [reportFrequency, setReportFrequency] = useState("daily");
   const [reportFormat, setReportFormat] = useState("pdf");
   const [reportTitle, setReportTitle] = useState("LIMS Summary Report");
   const [qcSamples, setQcSamples] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const reportDocRef = useRef(null);
+  const { promptSave, exportSavePromptModal } = useSaveExportPrompt(showToast);
 
   useEffect(() => { fetchQcSamples().then(setQcSamples).catch((error) => console.error("Failed to load QC samples", error)); }, []);
 
@@ -83,50 +168,73 @@ export function Reports({ samples, results, coas }) {
     const now = new Date(); if (reportFrequency === "daily") return `Daily report • ${now.toLocaleDateString("en-GB")}`; if (reportFrequency === "weekly") { const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7)); const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); return `Weekly report • ${monday.toLocaleDateString("en-GB")} - ${sunday.toLocaleDateString("en-GB")}`; } if (reportFrequency === "monthly") return `Monthly report • ${now.toLocaleDateString("en-GB", { month:"long", year:"numeric" })}`; if (reportFrequency === "yearly") return `Yearly report • ${now.getFullYear()}`; return "Report";
   };
 
-  const buildReportHtml = () => {
-    // A result can represent more than one registered sample (several samples
-    // coning-and-quartered down into one physical unit before analysis) — its origin
-    // and tonnage then have to roll up across every sample it covers, not just the
-    // primary one, or the weighted averages below would understate real tonnage.
-    const periodLabel = getReportPeriodLabel(); const sampleMap = Object.fromEntries(filteredSamples.map((s) => [s.id, s])); const rows = filteredResults.map((r) => { const sampleIds = r.sampleNumbers?.length ? r.sampleNumbers : [r.sampleId]; const matchedSamples = sampleIds.map((id) => sampleMap[id]).filter(Boolean); const origins = [...new Set(matchedSamples.map((s) => s.origin).filter(Boolean))]; return { date: r.analysisDate, week: Math.ceil((new Date(r.analysisDate) - new Date(new Date(r.analysisDate).getFullYear(), 0, 1)) / (7*864e5)), reportNo: `RPT-${reportFrequency.toUpperCase()}-${new Date().toISOString().slice(0,10)}`, sampleLabel: sampleIds.join(", "), origin: origins.length ? origins.join(", ") : "N/A", tonnage: matchedSamples.reduce((sum, s) => sum + (parseFloat(s.tonnage) || 0), 0), moisture: r.moisture || "", al2o3: parseFloat(r.al2o3) || 0, sio2: parseFloat(r.sio2) || 0, fe2o3: parseFloat(r.fe2o3) || 0, tio2: parseFloat(r.tio2) || 0, loi: parseFloat(r.loi) || 0 }; });
-    const totalTonnage = rows.reduce((sum, row) => sum + (parseFloat(row.tonnage) || 0), 0);
-    const avgMoisture = rows.length ? (rows.reduce((sum, row) => sum + (parseFloat(row.moisture) || 0), 0) / rows.length).toFixed(2) : "0.00";
-    const constituents = ["al2o3", "sio2", "fe2o3", "tio2", "loi"];
-    const weighted = {};
-    constituents.forEach((k) => { const sum = rows.reduce((sumValue, row) => sumValue + ((parseFloat(row[k]) || 0) * (parseFloat(row.tonnage) || 0)), 0); weighted[k] = totalTonnage ? (sum / totalTonnage).toFixed(2) : "0.00"; });
-    const logo = `<img src='/logo.png' style='position:absolute;right:36px;top:32px;opacity:0.08;width:140px;height:auto;'/>`;
-    const safeTitle = escapeHtml(reportTitle);
-    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title><style>body{margin:0;padding:0;background:#eff6ff;font-family:'Segoe UI',system-ui,sans-serif;color:#0f172a;} .page{max-width:1120px;margin:0 auto;padding:28px;position:relative;} .header{padding:28px 32px;border-radius:18px 18px 0 0;background:#1e3a8a;color:#fff;position:relative;overflow:hidden;} .header h1{margin:0;font-size:32px;font-weight:800;letter-spacing:.02em;} .header p{margin:10px 0 0;font-size:15px;color:#e0e7ff;line-height:1.6;max-width:780px;} .meta{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;} .meta-card{background:#fff;color:#0f172a;border:1px solid #c7d2fe;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(15,23,42,.08);} .meta-card span{display:block;font-size:26px;font-weight:800;margin-bottom:6px;} .meta-card small{color:#475569;font-size:13px;} table{width:100%;border-collapse:collapse;margin-top:30px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 18px 46px rgba(15,23,42,.08);} th,td{padding:14px 16px;text-align:left;} th{background:#1e40af;color:#fff;font-weight:700;font-size:13px;letter-spacing:.01em;} td{color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0;} tr:nth-child(even){background:#eff6ff;} .section{margin-top:34px;} .section-title{font-size:18px;font-weight:700;color:#102a43;margin-bottom:16px;} .summary-text{font-size:14px;color:#334155;line-height:1.7;} .watermark{position:absolute;right:32px;top:32px;opacity:.08;width:160px;height:auto;}</style></head><body><div class="page">${logo}<div class="header"><h1>${safeTitle}</h1><p>${escapeHtml(periodLabel)} • Real-time figures updated from current sample and analysis data.</p></div>`;
-    html += `<div class="meta"><div class="meta-card"><span>${reportSummary.totalSamples}</span><small>Samples in period</small></div><div class="meta-card"><span>${reportSummary.totalResults}</span><small>Results generated</small></div><div class="meta-card"><span>${reportSummary.approvedResults}</span><small>Approved results</small></div><div class="meta-card"><span>${reportSummary.issuedCOAs}</span><small>COAs issued</small></div></div>`;
-    html += `<div class="section"><div class="section-title">Period Summary</div><div class="summary-text">This ${escapeHtml(reportFrequency)} report covers ${periodRange.start.toLocaleDateString('en-GB')} to ${periodRange.end.toLocaleDateString('en-GB')} and includes ${filteredSamples.length} registered samples, ${filteredResults.length} analysed results, total extracted tonnage of ${totalTonnage.toFixed(2)} t, and average moisture of ${avgMoisture}%.</div></div>`;
-    html += `<div class="section"><div class="section-title">Detailed Results (${rows.length})</div><table><thead><tr><th>Date</th><th>Week</th><th>Report</th><th>Sample(s)</th><th>Origin</th><th>Tonnage</th><th>Moisture</th><th>Al₂O₃</th><th>SiO₂</th><th>Fe₂O₃</th><th>TiO₂</th><th>LOI</th></tr></thead><tbody>`;
-    rows.forEach((r) => { html += `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.week)}</td><td>${escapeHtml(r.reportNo)}</td><td>${escapeHtml(r.sampleLabel)}</td><td>${escapeHtml(r.origin)}</td><td>${escapeHtml(r.tonnage)}</td><td>${escapeHtml(r.moisture)}</td><td>${escapeHtml(r.al2o3)}</td><td>${escapeHtml(r.sio2)}</td><td>${escapeHtml(r.fe2o3)}</td><td>${escapeHtml(r.tio2)}</td><td>${escapeHtml(r.loi)}</td></tr>`; });
-    html += `</tbody></table></div>`;
-    html += `<div class="section"><div class="section-title">Weighted Averages (tonnage weighted)</div><table><thead><tr><th>Constituent</th><th>Weighted Mean</th></tr></thead><tbody>`;
-    constituents.forEach((k) => { html += `<tr><td>${escapeHtml(k.toUpperCase())}</td><td>${escapeHtml(weighted[k])}%</td></tr>`; });
-    html += `</tbody></table></div></div></body></html>`; return html;
+  // A result can represent more than one registered sample (several samples
+  // coning-and-quartered down into one physical unit before analysis) — its origin
+  // and tonnage then have to roll up across every sample it covers, not just the
+  // primary one, or the weighted averages below would understate real tonnage.
+  const buildReportRows = () => {
+    const sampleMap = Object.fromEntries(filteredSamples.map((s) => [s.id, s]));
+    return filteredResults.map((r) => {
+      const sampleIds = r.sampleNumbers?.length ? r.sampleNumbers : [r.sampleId];
+      const matchedSamples = sampleIds.map((id) => sampleMap[id]).filter(Boolean);
+      const origins = [...new Set(matchedSamples.map((s) => s.origin).filter(Boolean))];
+      return { date: r.analysisDate, sampleLabel: sampleIds.join(", "), origin: origins.length ? origins.join(", ") : "N/A", tonnage: matchedSamples.reduce((sum, s) => sum + (parseFloat(s.tonnage) || 0), 0), moisture: r.moisture || "", al2o3: parseFloat(r.al2o3) || 0, sio2: parseFloat(r.sio2) || 0, fe2o3: parseFloat(r.fe2o3) || 0, tio2: parseFloat(r.tio2) || 0, loi: parseFloat(r.loi) || 0 };
+    });
   };
 
-  const exportReportAsWord = () => { const html = buildReportHtml(); const blob = new Blob([html], { type: "application/msword" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${reportTitle.replace(/\s+/g,"-")}-${reportFrequency}.doc`; a.click(); URL.revokeObjectURL(url); };
-  const exportReportAsPDF = () => { const html = buildReportHtml(); const printWindow = window.open("", "_blank", "toolbar=no,scrollbars=no,resizable=yes,width=900,height=1200"); if (!printWindow) return; printWindow.document.open(); printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 300); };
-  const generateReport = () => { if (reportFormat === "word") exportReportAsWord(); else exportReportAsPDF(); };
-  // A sample's Origin is free text set by whoever registers it, so a value starting
-  // with =, +, -, or @ would otherwise open as a live formula in Excel/Sheets for
-  // anyone who later exports and opens this file (CSV/formula injection) — csvCell
-  // neutralizes that the same way buildReportHtml's escapeHtml() does for the HTML
-  // export path above, plus the standard comma/quote/newline quoting CSV needs anyway.
-  const csvCell = (value) => {
-    const str = String(value ?? "");
-    const guarded = /^[=+\-@]/.test(str) ? `'${str}` : str;
-    return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+  const constituents = ["al2o3", "sio2", "fe2o3", "tio2", "loi"];
+  const rows = buildReportRows();
+  const totalTonnage = rows.reduce((sum, row) => sum + (parseFloat(row.tonnage) || 0), 0);
+  const avgMoisture = rows.length ? (rows.reduce((sum, row) => sum + (parseFloat(row.moisture) || 0), 0) / rows.length).toFixed(2) : "0.00";
+  const weighted = {};
+  constituents.forEach((k) => { const sum = rows.reduce((sumValue, row) => sumValue + ((parseFloat(row[k]) || 0) * (parseFloat(row.tonnage) || 0)), 0); weighted[k] = totalTonnage ? (sum / totalTonnage).toFixed(2) : "0.00"; });
+
+  const exportReportAsWord = () => {
+    if (!reportDocRef.current) return;
+    const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${reportTitle}</title></head><body>${reportDocRef.current.innerHTML}</body></html>`;
+    const blob = new Blob([html], { type: "application/msword" });
+    const fileName = `${reportTitle.replace(/\s+/g,"-")}-${reportFrequency}.doc`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = fileName; a.click(); URL.revokeObjectURL(url);
+    promptSave(blob, fileName);
   };
-  const exportCSV = () => { const headers = "Sample ID,Origin,Status,Priority,Date\n"; const rows = samples.map((s)=>[s.id,s.origin,s.status,s.priority,s.dateReceived].map(csvCell).join(",")).join("\n"); const blob = new Blob([headers+rows], {type:"text/csv"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "gbc_samples.csv"; a.click(); };
+
+  // Previously opened a new window and called document.write()/print() on raw HTML —
+  // replaced with the same rasterize-to-PDF pipeline the COA uses (nodeToMultiPagePdf
+  // instead of the single-page variant, since a report can legitimately run to any
+  // number of result rows and shouldn't be force-shrunk to illegibility).
+  const exportReportAsPDF = async () => {
+    if (!reportDocRef.current) return;
+    setExporting(true);
+    try {
+      const pdf = await nodeToMultiPagePdf(reportDocRef.current);
+      const fileName = `${reportTitle.replace(/\s+/g,"-")}-${reportFrequency}.pdf`;
+      pdf.save(fileName);
+      promptSave(pdf.output("blob"), fileName);
+    } catch (error) {
+      console.error("Failed to generate report PDF", error);
+      showToast?.(error.message || "Unable to generate PDF.", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const generateReport = () => { if (reportFormat === "word") exportReportAsWord(); else exportReportAsPDF(); };
+  const exportCSV = () => {
+    const headers = "Sample ID,Origin,Status,Priority,Date\n";
+    const csvRows = samples.map((s)=>[s.id,s.origin,s.status,s.priority,s.dateReceived].map(csvCell).join(",")).join("\n");
+    const blob = new Blob([headers+csvRows], {type:"text/csv"});
+    const fileName = "gbc_samples.csv";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = fileName; a.click();
+    promptSave(blob, fileName);
+  };
 
   return (
     <div style={{ padding:28 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24, flexWrap:"wrap", gap:16 }}>
         <div><h1 style={{ fontSize:22, fontWeight:800, color:"#111827", margin:0 }}>Reports & Analytics</h1><p style={{ color:"#6b7280", fontSize:14, margin:"4px 0 0" }}>Comprehensive data analysis and export</p></div>
-        <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}><Button onClick={exportCSV} variant="ghost">⬇ Export CSV</Button><Button onClick={()=>window.print()} variant="primary">🖨 Print Report</Button></div>
+        <Button onClick={exportCSV} variant="ghost">⬇ Export CSV</Button>
       </div>
       <div style={{ background:"#eff6ff", borderRadius:18, border:"1.5px solid #bfdbfe", padding:28, marginBottom:24 }}>
         <div style={{ fontSize:18, fontWeight:800, color:"#1e40af", marginBottom:14 }}>Report Generator</div>
@@ -136,8 +244,8 @@ export function Reports({ samples, results, coas }) {
           <Input label="Report Title" value={reportTitle} onChange={setReportTitle} placeholder="Enter report title" />
         </div>
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"center" }}>
-          <Button onClick={generateReport} variant="primary">Generate {reportFormat === "word" ? "Word" : "PDF"}</Button>
-          <div style={{ color:"#334155", fontSize:13 }}>Exports a polished {reportFormat.toUpperCase()} file using current period data.</div>
+          <Button onClick={generateReport} variant="primary" disabled={exporting}>{exporting ? "Generating…" : `Generate ${reportFormat === "word" ? "Word" : "PDF"}`}</Button>
+          <div style={{ color:"#334155", fontSize:13 }}>Exports a polished {reportFormat.toUpperCase()} file using current period data — same letterhead and watermark as a COA, no icons, results in a plain table.</div>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:14, marginTop:24 }}>
           <div style={{ background:"#fff", borderRadius:14, padding:16, border:"1px solid #dbeafe" }}><div style={{ fontSize:12, color:"#1e40af", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Samples</div><div style={{ marginTop:8, fontSize:22, fontWeight:800, color:"#0f172a" }}>{filteredSamples.length}</div></div>
@@ -166,7 +274,16 @@ export function Reports({ samples, results, coas }) {
       {activeReport === "quality" && (
         <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", padding:24 }}><div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:16 }}>Quality Metrics</div><div className="lims-grid-4" style={{ gap:16, marginBottom:20 }}><StatCard label="Overall QC Pass Rate" value={`${qcPassRate}%`} icon="✅" color="#dcfce7" /><StatCard label="Failed QC Samples" value={qcFailedCount} icon="❌" color="#fee2e2" /><StatCard label="Total QC Samples" value={qcSamples.length} icon="🎯" color="#dbeafe" /><StatCard label="Calibration Compliance" value={`${calibrationCompliance}%`} icon="⚖️" color="#f3e8ff" /></div>{qcTrendData.length > 0 ? <ResponsiveContainer width="100%" height={200}><LineChart data={qcTrendData}><CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" /><XAxis dataKey="m" fontSize={12} /><YAxis domain={[0,100]} fontSize={12} unit="%" /><Tooltip /><Line type="monotone" dataKey="rate" stroke="#22c55e" strokeWidth={2} dot={{r:4}} name="QC Pass Rate %" /></LineChart></ResponsiveContainer> : <div style={{ padding:40, textAlign:"center", color:"#9ca3af", fontSize:13 }}>No QC history yet.</div>}</div>
       )}
+      {/* Rendered off-screen (not display:none — html2canvas can't rasterize an
+          undisplayed node), captured by exportReportAsPDF/Word, never shown to the
+          user directly. Always mounted so the ref is ready the moment "Generate" is
+          clicked. */}
+      <div style={{ position:"fixed", top:0, left:-10000, width:960 }} aria-hidden="true">
+        <div ref={reportDocRef}>
+          <ReportDocument title={reportTitle} periodLabel={getReportPeriodLabel()} summary={reportSummary} rows={rows} totalTonnage={totalTonnage} avgMoisture={avgMoisture} weighted={weighted} constituents={constituents} />
+        </div>
+      </div>
+      {exportSavePromptModal}
     </div>
   );
 }
-
