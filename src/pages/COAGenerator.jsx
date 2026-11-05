@@ -1,13 +1,25 @@
 import { useState, useRef } from "react";
 import { formatDate, statusColor, statusBg } from "../utils/lims";
 import { Badge, Modal, Input, Select, Textarea, Button } from "../components/shared";
+import { nodeToSinglePagePdf } from "../utils/pdfExport";
+import { useSaveExportPrompt } from "../components/useSaveExportPrompt";
 
 // Hoisted out of COAGenerator (was defined inline on every render, which resets its
 // state each time) — its only dependency on the enclosing scope was `user`, now an
 // explicit prop instead of a closure capture.
 const COADocument = ({ coa, user }) => (
   <div style={{ background:"#fff", padding:32, fontFamily:"'Times New Roman',serif", fontSize:12, lineHeight:1.6, maxWidth:680, margin:"0 auto", position:"relative" }}>
-    <img src={"/logo.png"} alt="logo" style={{ position:"absolute", right:20, top:20, width:64, opacity:0.9 }} />
+    {/* Faint rotated background watermark, same /logo.png the app uses elsewhere
+        (src/pages/Watermark.jsx) — absolutely positioned inside the document itself
+        (not viewport-fixed like that component) so html2canvas captures it as part
+        of the exported page rather than it being clipped to whatever's on screen. */}
+    <img src={"/logo.png"} alt="" aria-hidden="true" style={{ position:"absolute", top:"50%", left:"50%", width:420, transform:"translate(-50%,-50%) rotate(-12deg)", opacity:0.06, filter:"grayscale(1)", pointerEvents:"none", zIndex:0 }} />
+    <img src={"/logo.png"} alt="logo" style={{ position:"absolute", right:20, top:20, width:64, opacity:0.9, zIndex:1 }} />
+    {/* position:relative + zIndex:1 forces this whole block into the explicit-z-index
+        paint tier, above the watermark above (position:absolute, non-positioned
+        siblings would otherwise paint UNDER an absolutely-positioned element
+        regardless of DOM order). */}
+    <div style={{ position:"relative", zIndex:1 }}>
     <div style={{ textAlign:"center", borderBottom:"3px solid #1e3a8a", paddingBottom:16, marginBottom:20 }}>
       <div style={{ fontSize:24, fontWeight:800, color:"#1e3a8a", letterSpacing:2 }}>GHANA BAUXITE COMPANY LIMITED</div>
       <div style={{ fontSize:11, color:"#6b7280" }}>IOP Group · Laboratory Services</div>
@@ -62,6 +74,7 @@ const COADocument = ({ coa, user }) => (
       <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Analyzed By:</strong> {coa.result?.analystName||user.name}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {formatDate(coa.result?.analysisDate)}</div></div>
       <div style={{ borderTop:"1px solid #374151", paddingTop:8 }}><div><strong>Approved By:</strong> {coa.approvedBy||"Pending approval"}</div><div style={{ color:"#6b7280", fontSize:11 }}>Date: {coa.approvedAt?formatDate(coa.approvedAt):"—"}</div></div>
     </div>
+    </div>
   </div>
 );
 
@@ -73,7 +86,9 @@ export function COAGenerator({ user, results, coas, setCoas, showToast, onCoaCre
   const [form, setForm] = useState({ resultId:"", clientName:"", clientAddress:"", clientContact:"", includeResults:true, includeMethodology:true, includeQC:false, remarks:"", issueDate:new Date().toISOString().split("T")[0] });
   const [preview, setPreview] = useState(null);
   const [viewList, setViewList] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const docRef = useRef(null);
+  const { promptSave, exportSavePromptModal } = useSaveExportPrompt(showToast);
 
   const set = (k,v) => setForm((p)=>({...p,[k]:v}));
   const approvedResults = results.filter((r) => r.status === "Approved");
@@ -111,16 +126,30 @@ export function COAGenerator({ user, results, coas, setCoas, showToast, onCoaCre
     if (!docRef.current) return;
     const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${preview.coaNumber} COA</title></head><body>${docRef.current.innerHTML}</body></html>`;
     const blob = new Blob([html], { type: "application/msword" });
+    const fileName = `${preview.coaNumber}-COA.doc`;
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `${preview.coaNumber}-COA.doc`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = fileName; a.click(); URL.revokeObjectURL(url);
+    promptSave(blob, fileName, preview.sampleId);
   };
 
-  const exportCOAToPDF = () => {
+  // Previously opened a browser print dialog on the live preview — no guarantee that
+  // ever fit on one physical page (depends on the browser's own print scaling), and
+  // there was no file to offer saving into File Management since nothing was ever
+  // captured as an actual PDF. nodeToSinglePagePdf rasterizes the same preview and
+  // force-fits it onto exactly one A4 page, giving a real PDF Blob either way.
+  const exportCOAToPDF = async () => {
     if (!docRef.current) return;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${preview.coaNumber} COA</title><style>body{margin:0;padding:24px;font-family:'Times New Roman',serif;}</style></head><body>${docRef.current.innerHTML}</body></html>`;
-    const printWindow = window.open("", "_blank", "toolbar=no,scrollbars=no,resizable=yes,width=900,height=1200");
-    if (!printWindow) return showToast("Unable to open print window.", "error");
-    printWindow.document.open(); printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+    setExporting(true);
+    try {
+      const pdf = await nodeToSinglePagePdf(docRef.current);
+      const fileName = `${preview.coaNumber}-COA.pdf`;
+      pdf.save(fileName);
+      promptSave(pdf.output("blob"), fileName, preview.sampleId);
+    } catch (error) {
+      showToast(error.message || "Unable to generate PDF.", "error");
+    } finally {
+      setExporting(false);
+    }
   };
 
   // E-signature: marking a certificate Issued (the point it actually leaves the
@@ -146,12 +175,13 @@ export function COAGenerator({ user, results, coas, setCoas, showToast, onCoaCre
     <div style={{ padding:28 }}>
       <div style={{ display:"flex", gap:12, marginBottom:20, alignItems:"center" }}>
         <Button onClick={()=>{setPreview(null);setViewList(true);}} variant="secondary">← Back</Button>
-        <Button onClick={exportCOAToPDF} variant="primary">🖨 Export PDF</Button>
+        <Button onClick={exportCOAToPDF} variant="primary" disabled={exporting}>{exporting ? "Generating…" : "🖨 Export PDF"}</Button>
         <Button onClick={exportCOAToWord} variant="ghost">⬇ Export Word</Button>
         {preview.status === "Draft" && <span style={{ fontSize:13, color:"#9ca3af" }}>Awaiting approval in Verification Center</span>}
         {preview.status === "Approved" && <Button onClick={()=>setShowIssueModal(true)} variant="warning">📤 Mark as Issued</Button>}
       </div>
       <div ref={docRef} style={{ border:"1.5px solid #e5e7eb", borderRadius:12, overflow:"hidden" }}><COADocument coa={preview} user={user} /></div>
+      {exportSavePromptModal}
       {showIssueModal && (
         <Modal title="Mark COA as Issued" onClose={()=>{setShowIssueModal(false);setSignPassword("");}}>
           <div style={{ fontSize:13, color:"#6b7280", marginBottom:12 }}>Marking this certificate as Issued confirms it has been sent to the client.</div>

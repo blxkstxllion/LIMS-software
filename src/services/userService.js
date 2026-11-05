@@ -58,6 +58,7 @@ export async function fetchNotifications() {
     message: n.message,
     actorName: n.actorName,
     createdAt: n.createdAt,
+    page: n.page,
   }));
 }
 

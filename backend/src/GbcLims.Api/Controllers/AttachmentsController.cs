@@ -21,7 +21,7 @@ public class AttachmentsController : ControllerBase
     // of content the lab accepts, not path safety.
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".pdf", ".csv", ".xlsx", ".docx", ".jpg", ".jpeg", ".png"
+        ".pdf", ".csv", ".xlsx", ".doc", ".docx", ".jpg", ".jpeg", ".png"
     };
 
     private readonly GbcLimsDbContext _context;

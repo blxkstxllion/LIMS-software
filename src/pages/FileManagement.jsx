@@ -9,6 +9,7 @@ export function FileManagement({ user, samples, showToast }) {
   const [drag, setDrag] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState("");
+  const [filterGroup, setFilterGroup] = useState("");
   const [uploadSampleId, setUploadSampleId] = useState("");
   const fileInputRef = useRef(null);
 
@@ -63,7 +64,15 @@ export function FileManagement({ user, samples, showToast }) {
   };
 
   const typeIcon = (t) => ({ PDF:"📄", Excel:"📊", Image:"🖼️", CSV:"📋", Word:"📝" }[t] || "📁");
-  const filtered = files.filter((f) => !search || f.name.toLowerCase().includes(search.toLowerCase()));
+  // A fixed canonical list, not just whatever groups happen to already be present —
+  // otherwise "Generated Exports" wouldn't appear as a filter option at all until at
+  // least one export had already been saved there, the same staleness-shaped bug the
+  // Sample Management status filter had.
+  const allGroups = [...new Set(["General", "Generated Exports", ...files.map((f) => f.group).filter(Boolean)])];
+  const exportsCount = files.filter((f) => f.group === "Generated Exports").length;
+  const filtered = files
+    .filter((f) => !search || f.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((f) => !filterGroup || f.group === filterGroup);
   const totalSize = files.reduce((sum,f) => sum + parseFloat(f.size), 0);
 
   return (
@@ -83,11 +92,29 @@ export function FileManagement({ user, samples, showToast }) {
           <Button onClick={()=>fileInputRef.current?.click()} variant="primary" disabled={uploading}>📤 Upload Files</Button>
         </div>
       </div>
-      <div className="lims-grid-5" style={{ gap:12, marginBottom:24 }}>
+      <div className="lims-grid-5" style={{ gap:12, marginBottom:16 }}>
         {[['PDF','📄'],['Excel','📊'],['Image','🖼️'],['CSV','📋'],['Other','📁']].map(([type,icon])=>(<div key={type} style={{ background:"#fff", borderRadius:10, border:"1.5px solid #e5e7eb", padding:"14px 16px", textAlign:"center" }}><div style={{ fontSize:24, marginBottom:4 }}>{icon}</div><div style={{ fontSize:18, fontWeight:700, color:"#111827" }}>{files.filter((f)=>f.type===type).length}</div><div style={{ fontSize:12, color:"#6b7280" }}>{type} files</div></div>))}
       </div>
-      <div style={{ marginBottom:16 }}>
-        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search files…" style={{ width:"100%", maxWidth:400, padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+      {/* Generated exports (COA/Report PDFs & Word docs, CSV exports saved via the
+          "save to File Management?" prompt) land in their own group rather than
+          mixed anonymously into general uploads — clicking this card filters the
+          table below down to just that section. */}
+      <div onClick={()=>setFilterGroup(filterGroup === "Generated Exports" ? "" : "Generated Exports")} style={{ background: filterGroup==="Generated Exports" ? "#eff6ff" : "#fff", border:`1.5px solid ${filterGroup==="Generated Exports" ? "#1e3a8a" : "#e5e7eb"}`, borderRadius:10, padding:"14px 18px", marginBottom:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <span style={{ fontSize:22 }}>🗂️</span>
+          <div>
+            <div style={{ fontSize:14, fontWeight:700, color:"#111827" }}>Generated Exports</div>
+            <div style={{ fontSize:12, color:"#6b7280" }}>COA & Report PDFs/Word docs, CSV exports saved from their export dialogs</div>
+          </div>
+        </div>
+        <Badge text={String(exportsCount)} color="#1e3a8a" bg="#dbeafe" />
+      </div>
+      <div style={{ marginBottom:16, display:"flex", gap:10, flexWrap:"wrap" }}>
+        <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="🔍 Search files…" style={{ flex:"1 1 260px", maxWidth:400, padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+        <select value={filterGroup} onChange={(e)=>setFilterGroup(e.target.value)} style={{ padding:"8px 12px", border:"1.5px solid #e5e7eb", borderRadius:8, fontSize:13, outline:"none", background:"#fff" }}>
+          <option value="">All Groups</option>
+          {allGroups.map((g)=>(<option key={g} value={g}>{g}</option>))}
+        </select>
       </div>
       <div style={{ background:"#fff", borderRadius:12, border:"1.5px solid #e5e7eb", overflow:"hidden" }}>
         <div style={{ overflowX:"auto" }}>

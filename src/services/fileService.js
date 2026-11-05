@@ -27,9 +27,12 @@ export async function fetchFiles() {
   return (attachments || []).map(toUiFile);
 }
 
-export async function uploadFile(file, { group, sampleId } = {}) {
+// `file` can be a real File (drag-and-drop/file-picker) or a plain Blob (a generated
+// export) — Blobs have no `.name` of their own, so `fileName` is required for those;
+// FormData's 3-arg append() form is what lets a filename travel with a bare Blob.
+export async function uploadFile(file, { group, sampleId, fileName } = {}) {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", file, fileName || file.name);
   if (group) formData.append("group", group);
   if (sampleId) formData.append("sampleId", sampleId);
   const created = await apiUpload("/api/attachments", formData);
